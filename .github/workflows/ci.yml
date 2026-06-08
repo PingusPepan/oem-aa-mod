@@ -1,0 +1,109 @@
+name: CI
+
+# Compile-only check to catch breakage before a release tag is cut.
+# Builds both configs and packages the same two tarballs the release
+# workflow ships (versioned by short SHA instead of a tag), so what CI
+# produces matches a real release.
+# Tag pushes are intentionally NOT built here — release.yml owns those.
+on:
+  # Only main on push; PR branches are covered by pull_request below.
+  # (Triggering push on all branches would double-run every push to a
+  # branch that has an open PR — once for push, once for the PR.)
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+# A newer push to the same branch/PR supersedes an in-flight run.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      # The toolchain content is fixed by the submodule gitlink, so its
+      # commit SHA is the natural cache key — read it straight from the
+      # gitlink (no submodule checkout needed).
+      - name: Resolve m3-toolchain submodule commit
+        id: toolchain
+        run: echo "sha=$(git ls-tree HEAD -- mazda/m3-toolchain | awk '{print $3}')" >> "$GITHUB_OUTPUT"
+
+      - name: Cache m3-toolchain (keyed on its submodule commit)
+        id: toolchain-cache
+        uses: actions/cache@v4
+        with:
+          path: mazda/m3-toolchain
+          key: m3-toolchain-${{ steps.toolchain.outputs.sha }}
+
+      - name: Fetch m3-toolchain (cache miss only)
+        if: steps.toolchain-cache.outputs.cache-hit != 'true'
+        run: git submodule update --init mazda/m3-toolchain
+
+      - name: Verify the cross toolchain is present and runnable
+        run: |
+          set -euo pipefail
+          gpp=mazda/m3-toolchain/bin/arm-cortexa9_neon-linux-gnueabi-g++
+          if [ ! -x "$gpp" ]; then
+            echo "::error::$gpp missing — m3-toolchain submodule did not check out"
+            exit 1
+          fi
+          if ! file "$gpp" | grep -q 'ELF'; then
+            echo "::error::$gpp is not an ELF binary (Git LFS blobs not pulled?)"
+            file "$gpp"
+            exit 1
+          fi
+          "$gpp" --version | head -1
+
+      - name: Build (release + debug)
+        run: make -C mazda -j"$(nproc)" all
+
+      - name: Package release + debug archives
+        run: |
+          set -euo pipefail
+          VERSION="$(git rev-parse --short HEAD)"
+          mkdir -p dist
+          # Same packaging as release.yml: one tar.gz per config, .so
+          # keeps its canonical name in both, resources/ bundled in both.
+          # Normal (release) archive has no suffix; debug gets -debug.
+          for cfg in release debug; do
+            case "$cfg" in
+              release) name="oem-aa-mod-${VERSION}" ;;
+              debug)   name="oem-aa-mod-${VERSION}-debug" ;;
+            esac
+            stage="staging/${name}"
+            mkdir -p "$stage"
+            cp mazda/build/"$cfg"/libpatch-*.so "$stage/"
+            cp -r resources "$stage/"
+            # Catch a build that "succeeds" but links for the wrong target.
+            for so in "$stage"/libpatch-*.so; do
+              file "$so"
+              file "$so" | grep -q 'ELF 32-bit.*ARM' || {
+                echo "::error::$so is not an ARM shared object"; exit 1; }
+            done
+            tar -czf "dist/${name}.tar.gz" -C staging "$name"
+          done
+          ( cd dist && sha256sum ./*.tar.gz > SHA256SUMS )
+          echo "--- dist ---"
+          ls -la dist
+          for archive in dist/*.tar.gz; do
+            echo "--- $archive contents ---"
+            tar -tzf "$archive"
+          done
+
+      - name: Upload archives
+        uses: actions/upload-artifact@v4
+        with:
+          name: oem-aa-mod-archives
+          path: |
+            dist/*.tar.gz
+            dist/SHA256SUMS
+          retention-days: 14
+          if-no-files-found: error

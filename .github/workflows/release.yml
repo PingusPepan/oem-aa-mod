@@ -1,0 +1,130 @@
+name: Release
+
+# Build the default (release) shim and publish a GitHub Release on
+# every pushed tag (the project tags as X.Y.Z, e.g. 0.3.0).
+#
+# The cross compile is a plain `make -C mazda` driven by the in-repo
+# m3-toolchain submodule. Its binaries are x86_64 ELF, so they run
+# natively on the ubuntu-latest (x86_64) runner — no Docker, no qemu.
+# (The Dockerfile remains the local/reproducible path; CI just calls
+# the same Makefile directly for speed.)
+on:
+  push:
+    tags:
+      # Match X.Y.Z version tags only (GitHub glob: [0-9]+ = one or
+      # more digits, '.' is literal). Skips non-version / prerelease tags.
+      - '[0-9]+.[0-9]+.[0-9]+'
+
+# Required for `gh release create` to publish the release + assets.
+permissions:
+  contents: write
+
+# Don't let two pushes of the same tag race on the release.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # full history so --generate-notes can diff against the previous tag
+
+      # The toolchain content is fixed by the submodule gitlink, so its
+      # commit SHA is the natural cache key — read it straight from the
+      # gitlink (no submodule checkout needed).
+      - name: Resolve m3-toolchain submodule commit
+        id: toolchain
+        run: echo "sha=$(git ls-tree HEAD -- mazda/m3-toolchain | awk '{print $3}')" >> "$GITHUB_OUTPUT"
+
+      - name: Cache m3-toolchain (keyed on its submodule commit)
+        id: toolchain-cache
+        uses: actions/cache@v4
+        with:
+          path: mazda/m3-toolchain
+          key: m3-toolchain-${{ steps.toolchain.outputs.sha }}
+
+      - name: Fetch m3-toolchain (cache miss only)
+        if: steps.toolchain-cache.outputs.cache-hit != 'true'
+        run: git submodule update --init mazda/m3-toolchain
+
+      - name: Verify the cross toolchain is present and runnable
+        run: |
+          set -euo pipefail
+          gpp=mazda/m3-toolchain/bin/arm-cortexa9_neon-linux-gnueabi-g++
+          if [ ! -x "$gpp" ]; then
+            echo "::error::$gpp missing — m3-toolchain submodule did not check out"
+            exit 1
+          fi
+          # Catches the classic "LFS pointer instead of binary" failure
+          # with a clear message rather than a cryptic make error.
+          if ! file "$gpp" | grep -q 'ELF'; then
+            echo "::error::$gpp is not an ELF binary (Git LFS blobs not pulled?)"
+            file "$gpp"
+            exit 1
+          fi
+          "$gpp" --version | head -1
+
+      - name: Build (release + debug)
+        run: make -C mazda -j"$(nproc)" all
+
+      - name: Package release + debug archives
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          # One tar.gz per config. The .so keeps its canonical name
+          # inside every archive (matches the install docs: copy to
+          # /data_persist/oem-aa-mod/libpatch-<name>.so) — the archive
+          # name, not the .so name, distinguishes release vs debug.
+          # resources/ (the patched aap_system_attributes*.xml) is
+          # bundled in both so a release is self-contained for install.
+          # Normal (release) archive has no suffix; debug gets -debug.
+          for cfg in release debug; do
+            case "$cfg" in
+              release) name="oem-aa-mod-${TAG}" ;;
+              debug)   name="oem-aa-mod-${TAG}-debug" ;;
+            esac
+            stage="staging/${name}"
+            mkdir -p "$stage"
+            cp mazda/build/"$cfg"/libpatch-*.so "$stage/"
+            cp -r resources "$stage/"
+            # Catch a build that "succeeds" but links for the wrong target.
+            for so in "$stage"/libpatch-*.so; do
+              file "$so"
+              file "$so" | grep -q 'ELF 32-bit.*ARM' || {
+                echo "::error::$so is not an ARM shared object"; exit 1; }
+            done
+            # Wrapper dir inside the tarball avoids a tar-bomb on extract.
+            tar -czf "dist/${name}.tar.gz" -C staging "$name"
+          done
+          ( cd dist && sha256sum ./*.tar.gz > SHA256SUMS )
+          echo "--- dist ---"
+          ls -la dist
+          for archive in dist/*.tar.gz; do
+            echo "--- $archive contents ---"
+            tar -tzf "$archive"
+          done
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          # Never overwrite an existing release — re-releasing the same
+          # tag is almost always a mistake and silently swapping assets
+          # is confusing. If you really mean to re-release, delete the
+          # release (and re-push the tag) by hand first.
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "::error::Release $TAG already exists — refusing to overwrite. Delete it manually to re-release."
+            exit 1
+          fi
+          gh release create "$TAG" dist/*.tar.gz dist/SHA256SUMS \
+            --title "$TAG" \
+            --generate-notes
