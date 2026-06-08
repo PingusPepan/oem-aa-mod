@@ -45,7 +45,19 @@ jobs:
 
       - name: Fetch m3-toolchain (cache miss only)
         if: steps.toolchain-cache.outputs.cache-hit != 'true'
-        run: git submodule update --init mazda/m3-toolchain
+        run: |
+          set -euo pipefail
+          # Fetch the toolchain as a plain directory (not a live git
+          # submodule): clone at the pinned SHA, then drop .git. This
+          # keeps the cache as plain files so it has no dangling gitlink
+          # for actions/checkout's post-job `git submodule foreach`
+          # cleanup to trip over (the cache restores the worktree but
+          # not .git/modules/...). The build only needs the files.
+          url=$(git config -f .gitmodules submodule.mazda/m3-toolchain.url)
+          rm -rf mazda/m3-toolchain
+          git clone --filter=blob:none "$url" mazda/m3-toolchain
+          git -C mazda/m3-toolchain checkout --detach "${{ steps.toolchain.outputs.sha }}"
+          rm -rf mazda/m3-toolchain/.git
 
       - name: Verify the cross toolchain is present and runnable
         run: |
