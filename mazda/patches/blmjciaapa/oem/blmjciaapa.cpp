@@ -49,6 +49,8 @@ constexpr uintptr_t AudioManager_SendReplyRequestFocus = 0x000a6f40;
 constexpr uintptr_t AapConnectionManager_NotifyBtPairingResult = 0x0007c820;
 //   _ZN20AapConnectionManager18ActivateAapSessionEv
 constexpr uintptr_t AapConnectionManager_ActivateAapSession    = 0x00078db4;
+//   _ZN20AapConnectionManager28StopDeviceNotRespondingTimerEv
+constexpr uintptr_t AapConnectionManager_StopDeviceNotRespondingTimer = 0x000779bc;
 
 // AapConnectionManager instance layout (DATA field offsets, not
 // function offsets — no OEM getter exists for these). Both offsets are
@@ -61,14 +63,38 @@ constexpr uintptr_t AapConnectionManager_ActivateAapSession    = 0x00078db4;
 //   DevName (+0x54): "" idle / "Pixel 9 Pro XL" wired / "AAWireless" dongle.
 //     The USB-layer device name from StoreDeviceInfo; distinguishes the
 //     AAWireless dongle from a wired phone. (Ghidra "this+0x4c".)
-//   ConnectMode (+0xdc): 0 idle / 2 pending-BT-pair / 3 activated.
-//     0 idle -> 2 the moment the AOA session connects (phone parks here
-//     over the dongle at GAL 1.6, waiting for the BT pairing that never
-//     comes) -> 3 once ActivateAapSession runs. This is the field the
-//     decompile calls "this+0x254"; it is NOT at +0x25c at runtime (that
-//     tail of the object is dead space). Re-verify after any OEM update.
-constexpr uintptr_t AapConnectionManager_DevName     = 0x54;   // char[]  USB device name
-constexpr uintptr_t AapConnectionManager_ConnectMode = 0xdc;   // int     0=idle 2=pending-pair 3=activated
+//   SessionState (+0xdc): the AapConnectionManager SESSION STATE MACHINE
+//     `state_`. Enum:
+//       IDLE=0, STARTING=1, CONNECTED=2, ACTIVATED=3, DISCONNECTING=4.
+//     IDLE(0) -> CONNECTED(2) the moment the AOA session connects (phone
+//     parks here over the dongle at GAL 1.6, waiting for the BT pairing
+//     that never comes) -> ACTIVATED(3) once ActivateAapSession runs.
+//     Re-verify after any OEM update.
+//   DevHandle (+0x48): DevMgr handle of the current device (device info
+//     +0x04, copied by StoreDeviceInfo; the handle passed to
+//     eDevMgrGetDeviceSettings). Set at cable-in even when the OEM's
+//     session start is refused; cleared again by DeactivateAapSession.
+constexpr uintptr_t AapConnectionManager_DevHandle    = 0x48;  // u32     DevMgr device handle
+constexpr uintptr_t AapConnectionManager_DevName      = 0x54;  // char[]  USB device name
+constexpr uintptr_t AapConnectionManager_SessionState = 0xdc;  // int     0=IDLE 1=STARTING 2=CONNECTED 3=ACTIVATED 4=DISCONNECTING
+//   _ZN20AapConnectionManager18DevMgrEnabledCapCbEPvP17sDevMgrDeviceInfoS0_
+constexpr uintptr_t AapConnectionManager_DevMgrEnabledCapCb = 0x00072334;
+//   _ZN20AapConnectionManager19DevMgrDisabledCapCbEPvP17sDevMgrDeviceInfoP18sDevMgrDetachCauseS0_
+constexpr uintptr_t AapConnectionManager_DevMgrDisabledCapCb = 0x0007248c;
+//   _ZN7AapProc12GetBluetoothEv
+constexpr uintptr_t AapProc_GetBluetooth      = 0x0007f5ec;
+//   _ZN7RaceAap13BtReadyToPairEh
+constexpr uintptr_t RaceAap_BtReadyToPair     = 0x0008ec70;
+//   AAPA_BTPairingResult_svc (com.jci.aapa BTPairingResult D-Bus handler)
+constexpr uintptr_t AAPA_BTPairingResult_svc  = 0x0005b404;
+//   _ZN7RaceAap14BtPairingReqCbEPvP18AAP_BtPairReqEvent
+constexpr uintptr_t RaceAap_BtPairingReqCb    = 0x0008bb60;
+//   _ZN7RaceAap11StopSessionEv
+constexpr uintptr_t RaceAap_StopSession       = 0x0008dd00;
+//   .bss: Device_t handles[7] that Bluetooth::GetPairedDevList fills via
+//   DM_GetAllByType (written by Bluetooth::dmGetAllByTypeTh); paired MAC [i] is
+//   DEV_GetBdAddr(handles[i]) (Bluetooth::devGetBdAddrTh).
+constexpr uintptr_t Bluetooth_PairedDevHandles = 0x000faad4;
 } // namespace off
 
 // Load bias of the already-mapped blmjciaapa.so: address of the
@@ -175,11 +201,15 @@ BLM_THUNK_VOID(AapConnectionManager_NotifyBtPairingResult,
                (void *self, int result), (self, result))
 BLM_THUNK_VOID(AapConnectionManager_ActivateAapSession,
                (void *self), (self))
+BLM_THUNK_VOID(AapConnectionManager_StopDeviceNotRespondingTimer,
+               (void *self), (self))
 
 BLM_FIELD_PTR(char, AapConnectionManager_dev_name,
               off::AapConnectionManager_DevName)
-BLM_FIELD(int, AapConnectionManager_connect_mode,
-          off::AapConnectionManager_ConnectMode, -1)
+BLM_FIELD(int, AapConnectionManager_session_state,
+          off::AapConnectionManager_SessionState, -1)
+BLM_FIELD(unsigned, AapConnectionManager_dev_handle,
+          off::AapConnectionManager_DevHandle, 0u)
 
 // Address (not a forward) of AudioManager::SendReplyRequestFocus, for the
 // audio head pre-open's entry detour. Same anchor-and-offset resolution as
@@ -198,4 +228,21 @@ void *AapConnectionManager_instance(void)
 {
 	void *aap = Singleton_AapProc_GetInstance();
 	return aap ? AapProc_GetAapConnectionManager(aap) : nullptr;
+}
+BLM_THUNK(int,    AapConnectionManager_DevMgrEnabledCapCb,
+          (void *ctx, void *devinfo, void *extra), (ctx, devinfo, extra), 0)
+BLM_THUNK(int,    AapConnectionManager_DevMgrDisabledCapCb,
+          (void *ctx, void *devinfo, void *detachcause, void *extra),
+          (ctx, devinfo, detachcause, extra), 0)
+BLM_THUNK(void *, AapProc_GetBluetooth, (void *self), (self), nullptr)
+BLM_THUNK(int,    RaceAap_BtReadyToPair, (void *self, unsigned char ready), (self, ready), -1)
+BLM_THUNK(int,    AAPA_BTPairingResult_svc,
+          (void *conn, void *reply, int result), (conn, reply, result), 0)
+BLM_THUNK(int,    RaceAap_BtPairingReqCb,
+          (void *user, AAP_BtPairReqEvent *ev), (user, ev), -1)
+BLM_THUNK(int,    RaceAap_StopSession, (void *self), (self), 0)
+
+const uint32_t *Bluetooth_paired_dev_handles(void)
+{
+	return static_cast<const uint32_t *>(blm_addr(off::Bluetooth_PairedDevHandles));
 }

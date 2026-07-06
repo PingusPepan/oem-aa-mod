@@ -69,6 +69,29 @@
 //                                     touchscreen-while-driving tweak). Mechanism and addresses in
 //                                     patches/svcjcinavi/compass.cpp. Read by svcjcinavi
 //                                     (default false)
+//   wireless          = true|false    enable wireless Android Auto: give jciAAPA the
+//                                     "new_hw" service arg sm_WCP.conf sets, start
+//                                     wireless sessions in blmjciaapa, and inject the
+//                                     AP credentials in aap_service. Needs a working
+//                                     5 GHz interface and the AP set up separately
+//                                     (default false).
+//
+// Wireless AP credentials and AA TCP endpoint. aap_service tells the phone these
+// over Bluetooth and writes the AP's hostapd.conf from them, so both always
+// match. Read by libpatch-aap_service (wifi_ap_conf.cpp) and aaw_handler.
+//   aa_ssid       = <string>           SoftAP SSID                        (default MazdaAA)
+//   aa_psk        = <string>           WPA2 passphrase, 8..63 chars       (default MazdaAndroidAuto)
+//   aa_channel    = <1..165>           Wi-Fi channel (>=36 => 5 GHz)      (default 36)
+//   aa_security   = <int>              AAP_WifiSecurityMode: 1=OPEN, 5=WPA2_PERSONAL (default 5) - 1 does not work
+//   aa_iface      = <ifname>           dongle AP interface                (default wlan1)
+//   aa_bssid      = <MAC>              BSSID told to the phone; empty = live
+//                                      aa_iface MAC                        (default empty)
+//   aa_hidden     = true|false         hide the SSID (ignore_broadcast_ssid) (default false)
+//   aa_tcp_ip     = <ip>               address the AA TCP server binds; 0.0.0.0 = all
+//                                      interfaces                         (default 0.0.0.0)
+//   aa_tcp_port   = <port>             AA TCP server port                 (default 5277)
+//   aa_ap_ip      = <ip>               AP address the phone is told to connect to
+//                                                                         (default 192.168.53.1)
 //
 // Booleans are lenient (true/1/yes/on, false/0/no/off). hud_transport
 // also accepts "svcjcinavi" as an alias for "svcnavi".
@@ -303,6 +326,18 @@ struct Settings {
     bool         bt_pairing_bypass_all_devices = false;
     bool         bt_pairing_show_device_notification = false;
     bool         compass_always_on = false;
+    // Wireless Android Auto.
+    bool         wireless          = false;
+    char         aa_ssid[64]       = "MazdaAA";
+    char         aa_psk[80]        = "MazdaAndroidAuto";
+    char         aa_bssid[24]      = "";        // empty = live aa_iface MAC
+    char         aa_iface[16]      = "wlan1";
+    unsigned     aa_channel        = 36;
+    unsigned     aa_security       = 5;         // AAP_WifiSecurityMode: 1 = OPEN, 5 = WPA2_PERSONAL
+    bool         aa_hidden         = false;     // hostapd ignore_broadcast_ssid
+    char         aa_tcp_ip[24]     = "0.0.0.0"; // 0.0.0.0 = all interfaces
+    unsigned     aa_tcp_port       = 5277;
+    char         aa_ap_ip[24]      = "192.168.53.1"; // told to the phone
     bool         loaded            = false;
 };
 
@@ -367,6 +402,28 @@ inline void apply_kv(const char *key, const char *val, void *ud)
             parse_bool(val, s.bt_pairing_show_device_notification);
     } else if (strcasecmp(key, "compass_always_on") == 0) {
         s.compass_always_on = parse_bool(val, s.compass_always_on);
+    } else if (strcasecmp(key, "wireless") == 0) {
+        s.wireless = parse_bool(val, s.wireless);
+    } else if (strcasecmp(key, "aa_ssid") == 0) {
+        snprintf(s.aa_ssid, sizeof(s.aa_ssid), "%s", val);
+    } else if (strcasecmp(key, "aa_psk") == 0) {
+        snprintf(s.aa_psk, sizeof(s.aa_psk), "%s", val);
+    } else if (strcasecmp(key, "aa_bssid") == 0) {
+        snprintf(s.aa_bssid, sizeof(s.aa_bssid), "%s", val);
+    } else if (strcasecmp(key, "aa_iface") == 0) {
+        snprintf(s.aa_iface, sizeof(s.aa_iface), "%s", val);
+    } else if (strcasecmp(key, "aa_channel") == 0) {
+        s.aa_channel = (unsigned)strtoul(val, nullptr, 10);
+    } else if (strcasecmp(key, "aa_security") == 0) {
+        s.aa_security = (unsigned)strtoul(val, nullptr, 10);
+    } else if (strcasecmp(key, "aa_hidden") == 0) {
+        s.aa_hidden = parse_bool(val, s.aa_hidden);
+    } else if (strcasecmp(key, "aa_tcp_ip") == 0) {
+        snprintf(s.aa_tcp_ip, sizeof(s.aa_tcp_ip), "%s", val);
+    } else if (strcasecmp(key, "aa_tcp_port") == 0) {
+        s.aa_tcp_port = (unsigned)strtoul(val, nullptr, 10);
+    } else if (strcasecmp(key, "aa_ap_ip") == 0) {
+        snprintf(s.aa_ap_ip, sizeof(s.aa_ap_ip), "%s", val);
     } else {
         // Common schema: a key this library doesn't act on is not an
         // error, just informational.
@@ -384,7 +441,9 @@ inline void log_effective(const char *prefix)
             "mute_pauses_phone=%s "
             "unmute_starts_playback=%s "
             "block_headunit_media_play=%s bt_pairing_bypass_all_devices=%s "
-            "bt_pairing_show_device_notification=%s compass_always_on=%s",
+            "bt_pairing_show_device_notification=%s compass_always_on=%s "
+            "wireless=%s aa_ssid=\"%s\" aa_psk(len=%u) aa_channel=%u aa_security=%u "
+            "aa_iface=%s aa_bssid=%s aa_hidden=%s aa_tcp_ip=%s aa_tcp_port=%u aa_ap_ip=%s",
          prefix,
          s.touch ? "true" : "false",
          s.hud   ? "true" : "false",
@@ -400,7 +459,11 @@ inline void log_effective(const char *prefix)
          s.block_headunit_media_play ? "true" : "false",
          s.bt_pairing_bypass_all_devices ? "true" : "false",
          s.bt_pairing_show_device_notification ? "true" : "false",
-         s.compass_always_on ? "true" : "false");
+         s.compass_always_on ? "true" : "false",
+         s.wireless ? "true" : "false",
+         s.aa_ssid, (unsigned)strlen(s.aa_psk), s.aa_channel, s.aa_security,
+         s.aa_iface, s.aa_bssid[0] ? s.aa_bssid : "(live iface MAC)",
+         s.aa_hidden ? "true" : "false", s.aa_tcp_ip, s.aa_tcp_port, s.aa_ap_ip);
 }
 
 // === Public API ===============================================
@@ -451,6 +514,17 @@ inline bool         block_headunit_media_play() { return settings().block_headun
 inline bool         bt_pairing_bypass_all_devices() { return settings().bt_pairing_bypass_all_devices; }
 inline bool         bt_pairing_show_device_notification() { return settings().bt_pairing_show_device_notification; }
 inline bool         compass_always_on() { return settings().compass_always_on; }
+inline bool         wireless_enabled()  { return settings().wireless; }
+inline const char  *aa_ssid()     { return settings().aa_ssid; }
+inline const char  *aa_psk()      { return settings().aa_psk; }
+inline const char  *aa_bssid()    { return settings().aa_bssid; }
+inline const char  *aa_iface()    { return settings().aa_iface; }
+inline unsigned      aa_channel()  { return settings().aa_channel; }
+inline unsigned      aa_security() { return settings().aa_security; }
+inline bool          aa_hidden()   { return settings().aa_hidden; }
+inline const char  *aa_tcp_ip()   { return settings().aa_tcp_ip; }
+inline unsigned      aa_tcp_port() { return settings().aa_tcp_port; }
+inline const char  *aa_ap_ip()    { return settings().aa_ap_ip; }
 
 } // namespace libpatch_config
 

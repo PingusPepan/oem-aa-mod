@@ -12,8 +12,9 @@ repository's Releases page. Each release has two archives:
 Use `oem-aa-mod-<version>.zip`; only grab the `-debug` one if you're
 actually debugging.
 
-The archive has the same layout — the shims under their canonical names
-plus the patched system-attribute XMLs and the sample config — so it's
+The archive has the same layout — the shims under their canonical names,
+the wireless AA tools, the patched system-attribute XMLs and the sample
+config — so it's
 everything the on-device install needs:
 
 ```
@@ -21,10 +22,14 @@ oem-aa-mod-<version>/
   libpatch-blmjciaapa.so              # -> /data_persist/oem-aa-mod/
   libpatch-svcjcinavi.so              # -> /data_persist/oem-aa-mod/ (optional; HUD merge + compass)
   libpatch-aap_service.so             # -> /data_persist/oem-aa-mod/ (optional; protocol v1.6)
+  aaw_listend, aaw_handler            # -> /data_persist/oem-aa-mod/ (optional; wireless AA, mode 0755)
   resources/
     aap_system_attributes.xml         # -> /etc/
     aap_system_attributes_UCP.xml     # -> /etc/
     libpatch.conf                     # -> /data_persist/oem-aa-mod/ (optional; runtime config)
+    wl/start-aa-ap.sh                 # -> /data_persist/wl/ (optional; wireless AA AP)
+    wl/reset-aa-dongle.sh             # -> /data_persist/wl/ (optional; wireless AA dongle recovery)
+    wl/sm.conf.snippet                # boot entry for start-aa-ap.sh (wireless AA)
 ```
 
 These shims are per-service `LD_PRELOAD` libraries, each scoped to the
@@ -199,6 +204,8 @@ case-insensitive.
 | `use_protocol_v1_6` | `true` / `false` | `false` | Advertise Android Auto GAL 1.6 so the phone sends the 1.6 navigation protocol (maneuver / lanes / distance) for the HUD. Read by the `aap_service` shim; requires it to be preloaded (see the note below). |
 | `roundabout_prepend_exit_number` | `true` / `false` | `false` | For a roundabout that gives an exit number but no exit angle (GAL 1.6 only), prepend its number to the HUD street name. |
 | `aa_audio_low_latency` | `true` / `false` | `false` | Fix Android Auto guidance-audio clipping at the head, beginning, and tail of prompts — one switch for the whole audio-cutoff fix. Needs **both** the `aap_service` and `blmjciaapa` shims preloaded (see the note below). |
+| `wireless` | `true` / `false` | `false` | Enable wireless Android Auto. Needs extra setup on the unit — see the note below. |
+| `aa_ssid`, `aa_psk`, `aa_channel`, `aa_security`, `aa_iface`, `aa_bssid`, `aa_hidden`, `aa_tcp_ip`, `aa_tcp_port`, `aa_ap_ip` | strings / ints | see [`libpatch.conf`](../resources/libpatch.conf) | Wireless AP credentials and AA TCP endpoint. Only used when `wireless = true`. |
 
 Booleans are lenient — `true`/`1`/`yes`/`on` and `false`/`0`/`no`/`off`
 are all accepted.
@@ -312,10 +319,73 @@ the street, so it is safe to enable everywhere if preferred.
   preloaded (step 2). Every piece is gated by this one key — there is no separate audio
   switch.
 
+- **`wireless`** enables wireless Android Auto. Needs following shims:
+
+  - **`jciAAPA`** — automatic, since `libpatch-blmjciaapa.so` is already preloaded
+    there (step 2). It gives AAPA the `new_hw` argument that units with factory
+    wireless projection get from `/jci/sm/sm_WCP.conf`, so AAPA loads its
+    wireless-capable attribute set, and it starts a session when the phone
+    connects over Wi-Fi.
+  - **`aap_service`** — must be preloaded (step 2). It gives the phone the `aa_*`
+    credentials and writes the AP configuration `/tmp/aa-hostapd-wlan1.conf`.
+
+  Wireless also needs:
+
+  - **A working 5 GHz Wi-Fi interface.** The built-in radio is 2.4 GHz only, so
+    this means a USB Wi-Fi adapter with a driver for the head unit's kernel that
+    supports AP mode. Example: the TP-Link Archer T2U v3 with
+    [cmu150-rtl8811au](https://github.com/PingusPepan/cmu150-rtl8811au). The
+    interface name goes in `aa_iface` (default `wlan1`).
+  - **The AP script** [`resources/wl/start-aa-ap.sh`](../resources/wl/start-aa-ap.sh),
+    copied to `/data_persist/wl/` (mode 0755). It waits for
+    `/tmp/aa-hostapd-wlan1.conf`, starts hostapd and udhcpd on `wlan1` at
+    `192.168.53.1`, opens the firewall for `wlan1`, and starts `aaw_listend`. Add
+    the `start_aa_ap` block from
+    [`resources/wl/sm.conf.snippet`](../resources/wl/sm.conf.snippet) to the service
+    manifest the unit boots (`/jci/sm/sm.conf`, or `/jci/sm/sm_WCP.conf` on units
+    that boot that one; `ps w | grep 'jci/sm/sm -f'` shows which). Its dependency
+    `load_wlan1` is the service that loads your Wi-Fi driver; rename it to match
+    yours. The script only touches the hostapd it started, so the unit's own
+    hostapd (OEM Wi-Fi, wireless CarPlay) is left alone.
+  - **The Bluetooth handshake tools.** Copy `aaw_handler` and `aaw_listend` from
+    the release archive (or `build/tools/` after `make -C mazda tools`) to
+    `/data_persist/oem-aa-mod/` (mode 0755). `aaw_listend` (started by `start-aa-ap.sh`) waits
+    for the phone's wireless AA Bluetooth connection and runs `aaw_handler` for it.
+  - **The dongle recovery script**
+    [`resources/wl/reset-aa-dongle.sh`](../resources/wl/reset-aa-dongle.sh) in
+    `/data_persist/wl/` (mode 0755). A dongle can come up with a silent radio while
+    everything on the head unit reports it healthy; the only sign is the phone
+    reporting `WIFI_NETWORK_UNAVAILABLE`. On that verdict `aaw_listend` re-probes
+    the dongle (USB unbind/bind) and restarts the AP. Defaults: after one verdict,
+    or three in a row once the AP has carried a session; at most 10 times per boot.
+    Override the threshold with `AAW_RESET_AFTER=` and the script path with
+    `AAW_RESET=`. Without the script, `aaw_listend` logs that recovery is disabled.
+  - **The Bluetooth service record.** Apply
+    [`resources/BdsConfiguration.xml.patch`](../resources/BdsConfiguration.xml.patch)
+    to the stock `/jci/bds/BdsConfiguration.xml` (the patched file is
+    [`resources/BdsConfiguration.xml`](../resources/BdsConfiguration.xml)), so the
+    phone offers wireless Android Auto over Bluetooth.
+
+  > **Re-pair the phone after installing.** A phone already paired with the head
+  > unit does not offer wireless Android Auto until it is paired again: remove the
+  > pairing on both the phone and the head unit, then pair from scratch. The phone
+  > keeps the Bluetooth service list it read when it first paired, so it does not
+  > see the new record.
+
+  With `wireless = false` (the default) none of this is active.
+
+- **`aa_*`** are the AP credentials and AA TCP endpoint. The phone is told them over
+  Bluetooth and the AP's `hostapd.conf` is written from them, so both always match.
+  Defaults (SSID `MazdaAA`, WPA2 passphrase `MazdaAndroidAuto`, channel 36, `wlan1`)
+  are in [`libpatch.conf`](../resources/libpatch.conf); **change `aa_psk`**.
+  `aa_security = 1` runs the AP without link encryption; Android Auto's own TLS
+  still protects the projection, as it does over USB. Only used when
+  `wireless = true`.
+
 After editing `libpatch.conf`, restart the affected service(s) —
 `jciAAPA`, `jcinavi` if you patched it, and `aap_service` if you enabled
-`use_protocol_v1_6` or `aa_audio_low_latency` — or reboot for the change to take effect.
-The config is read once at library load.
+`use_protocol_v1_6`, `wireless` or `aa_audio_low_latency` — or reboot for the change to
+take effect. The config is read once at library load.
 
 ## Uninstall / disable
 

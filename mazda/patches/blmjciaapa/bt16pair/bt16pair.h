@@ -37,7 +37,7 @@
 #ifndef LIBPATCH_BLMJCIAAPA_BT16PAIR_BT16PAIR_H
 #define LIBPATCH_BLMJCIAAPA_BT16PAIR_BT16PAIR_H
 
-// Install the ProjectionStatusCb (cb_list slot 4) wrapper. Call from the
+// Install the ProjectionStatusCb (cb_list slot 3) wrapper. Call from the
 // aap_create_session shim, alongside hud_pre_aap_create_session, BEFORE
 // chaining to the real SDK entry point (the SDK memcpy's the table into
 // the session handle inside aap_create_session). Safe with cb_list==NULL

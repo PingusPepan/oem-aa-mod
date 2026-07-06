@@ -115,18 +115,22 @@ void *AudioManager_SendReplyRequestFocus_addr(void);
 //   AapConnectionManager_dev_name(cm)        -> USB device name (cm+0x54):
 //                                               "AAWireless" for the dongle,
 //                                               the phone model when wired.
-//   AapConnectionManager_connect_mode(cm)    -> connect mode (cm+0xdc):
-//                                               0 = idle, 2 = pending BT pair
-//                                               (AOA session up, dongle parks
-//                                               here at GAL 1.6), 3 = activated.
-//                                               Offset EMPIRICALLY pinned by a
+//   AapConnectionManager_session_state(cm)   -> session state machine
+//                                               `state_` (cm+0xdc):
+//                                               IDLE=0, STARTING=1,
+//                                               CONNECTED=2, ACTIVATED=3,
+//                                               DISCONNECTING=4. The AOA
+//                                               session up parks the dongle
+//                                               at CONNECTED(2) at GAL 1.6;
+//                                               ActivateAapSession moves it
+//                                               to ACTIVATED(3). Offset
+//                                               EMPIRICALLY pinned by a
 //                                               3-state /proc/mem object diff
-//                                               (idle/wired/dongle) — NOT the
-//                                               decompile's "0x254".
+//                                               (idle/wired/dongle).
 //   AapConnectionManager_NotifyBtPairingResult(cm, result)
-//       -> OEM guarded pairing-result entry; result==1 while mode==2
-//          triggers ActivateAapSession. Its guard reads the real mode field
-//          (cm+0xdc), so it works when mode==2 is observed.
+//       -> OEM guarded pairing-result entry; result==1 while state==CONNECTED(2)
+//          triggers ActivateAapSession. Its guard reads the real state field
+//          (cm+0xdc), so it works when CONNECTED(2) is observed.
 //   AapConnectionManager_ActivateAapSession(cm)
 //       -> the OEM "AA connected" activation itself (StartResourcesControl,
 //          ResumeLastMode, NotifyBTConnectionComplete, mode:=3). Takes NO
@@ -134,8 +138,79 @@ void *AudioManager_SendReplyRequestFocus_addr(void);
 //          activation when the in-band BT pairing is skipped (dongle GAL 1.6).
 void       *AapConnectionManager_instance(void);
 const char *AapConnectionManager_dev_name(void *cm);
-int         AapConnectionManager_connect_mode(void *cm);
+int         AapConnectionManager_session_state(void *cm);
 void        AapConnectionManager_NotifyBtPairingResult(void *cm, int result);
 void        AapConnectionManager_ActivateAapSession(void *cm);
+
+// AapConnectionManager::StopDeviceNotRespondingTimer(). Disarms the
+// "Device Not Responding" watchdog, which is armed when a wired device arrives
+// and raises the "device not responding" dialog if no session comes up in
+// time. The OEM re-arms it on the next device event.
+void        AapConnectionManager_StopDeviceNotRespondingTimer(void *cm);
+
+// DevMgr handle of the device the OEM has stored (cm+0x48), or 0. Never pass
+// 0 or the marker handle back to the OEM.
+unsigned    AapConnectionManager_dev_handle(void *cm);
+
+// AapConnectionManager::DevMgrEnabledCapCb(void *, sDevMgrDeviceInfo *, void *)
+//   The device manager's "device enabled" callback. Static, so there is no
+//   `this`; ctx and extra are unused (pass nullptr). It copies the device info
+//   into a worker and posts it; the worker runs ReceiveDevMgrEnabledCap ->
+//   StoreDeviceInfo and, for type 0xb01f, StartSession, on the OEM worker
+//   thread. Calling it with a built device info therefore replays a device
+//   connect safely from any thread.
+int AapConnectionManager_DevMgrEnabledCapCb(void *ctx, void *devinfo, void *extra);
+
+// AapConnectionManager::DevMgrDisabledCapCb(void *, sDevMgrDeviceInfo *,
+//                                           sDevMgrDetachCause *, void *)
+//   The matching "device disabled" callback (static, 4 arguments). It posts a
+//   worker that, for type 0xb01f, runs StopSession -> aap_stop_session and then
+//   reports the disconnect. It runs on the same worker as the connect, so a
+//   disconnect followed by a reconnect is processed in order. ctx and extra may
+//   be NULL; devinfo and detachcause must not be, or the call is ignored.
+int AapConnectionManager_DevMgrDisabledCapCb(void *ctx, void *devinfo,
+                                             void *detachcause, void *extra);
+
+// AapProc::GetBluetooth() -> the OEM Bluetooth object.
+void *AapProc_GetBluetooth(void *self);
+
+// RaceAap::BtReadyToPair(ready). Tells the AAP SDK that the head unit's
+// Bluetooth is ready. The OEM sends it when it recognises the phone as
+// already paired.
+int RaceAap_BtReadyToPair(void *self, unsigned char ready);
+
+// AAPA_BTPairingResult_svc(conn, reply, result). The com.jci.aapa
+// "BTPairingResult" D-Bus handler. It posts a worker that runs
+// ReceivePairingResult -> NotifyBtPairingResult(result) -> ActivateAapSession.
+// Pass conn = reply = NULL (no D-Bus reply is sent) and result = 1 to activate
+// the session. Returns void in the OEM; modelled as int and ignored.
+int AAPA_BTPairingResult_svc(void *conn, void *reply, int result);
+
+// The AAP SDK's Bluetooth pairing-request event as passed to
+// RaceAap::BtPairingReqCb: the phone's address as text ("AA:BB:CC:DD:EE:FF")
+// and the pairing method the phone asked for.
+struct AAP_BtPairReqEvent {
+    char mac[256];
+    int  method;
+};
+static_assert(sizeof(AAP_BtPairReqEvent) == 0x104, "AAP_BtPairReqEvent must be 0x104 bytes");
+
+// RaceAap::BtPairingReqCb(user, ev). The SDK callback for the phone's
+// Bluetooth pairing request. It copies *ev and posts a worker that runs
+// Bluetooth::RequestBTPairing, which answers the SDK and forwards the request
+// to BCA. BCA binds the phone to Android Auto and replies ReadyToPair +
+// PairingResult, which activates the session. Pass user = NULL.
+int RaceAap_BtPairingReqCb(void *user, AAP_BtPairReqEvent *ev);
+
+// Device-manager ids of the paired devices, index-aligned with the Bluetooth
+// object's paired-address list (entry i of one is entry i of the other; the
+// list's count applies to both). These are the same ids BCA reports as
+// btDeviceId. Static storage inside blmjciaapa.so; NULL until it is mapped.
+const uint32_t *Bluetooth_paired_dev_handles(void);
+
+// RaceAap::StopSession(). Stops the SDK session (aap_stop_session). Takes no
+// lock and does not run DeactivateAapSession; the SDK then reports the session
+// INVALID. Returns void in the OEM; modelled as int and ignored.
+int RaceAap_StopSession(void *self);
 
 #endif  // LIBPATCH_BLMJCIAAPA_BLMJCIAAPA_H

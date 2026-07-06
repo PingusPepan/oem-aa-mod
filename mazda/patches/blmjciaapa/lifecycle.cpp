@@ -25,6 +25,7 @@
 #include "audio/audio_stopdelay.h"
 #include "hud/hud.h"
 #include "bt16pair/bt16pair.h"
+#include "aaw_session.h"
 #include "monitor/navi_monitor.h"
 #include "playpause/playpause.h"
 #include "oem/blmjciaapa.h"
@@ -185,7 +186,7 @@ int aap_create_session(const char *cfg, void *unknown_r1,
     }
 
     // Wireless GAL-1.6 BT-pairing bypass: wrap ProjectionStatusCb
-    // (cb_list slot 4) so we can synthesize the pairing success that the
+    // (cb_list slot 3) so we can synthesize the pairing success that the
     // AAWireless dongle omits at GAL >= 1.6 (see bt16pair/). Gated on
     // use_protocol_v1_6; the wrapper is transparent and only acts when the
     // connected USB device is "AAWireless", so wired and non-1.6

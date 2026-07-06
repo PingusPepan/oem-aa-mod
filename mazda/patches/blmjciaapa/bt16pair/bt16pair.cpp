@@ -54,14 +54,15 @@ constexpr char const *kDongleDevNames[] = {
     "CAR2"
 };
 
-// AapConnectionManager connect-mode values (instance + 0xdc). Offset and
-// semantics EMPIRICALLY pinned by a 3-state /proc/mem object diff
-// (idle/wired/dongle, 2026-07-06): 0 while idle, 2 the moment the AOA
-// session connects (the dongle parks here at GAL 1.6 waiting for the BT
-// pairing request the phone never sends), 3 once ActivateAapSession runs.
-constexpr int kConnModeIdle        = 0;
-constexpr int kConnModePendingPair = 2;
-constexpr int kConnModeActivated   = 3;
+// AapConnectionManager session-state values (`state_`, instance + 0xdc).
+// Offset EMPIRICALLY pinned by a 3-state /proc/mem object diff
+// (idle/wired/dongle, 2026-07-06): IDLE while idle, CONNECTED the moment
+// the AOA session connects (the dongle parks here at GAL 1.6 waiting for
+// the BT pairing request the phone never sends), ACTIVATED once
+// ActivateAapSession runs.
+constexpr int kStateIdle      = 0;   // IDLE
+constexpr int kStateConnected = 2;   // CONNECTED (dongle parks here at GAL 1.6)
+constexpr int kStateActivated = 3;   // ACTIVATED
 
 constexpr const char *kServiceBusFallback =
     "unix:path=/tmp/dbus_service_socket";
@@ -83,7 +84,7 @@ bool g_activator_running = false;
 
 // Match known dongle names as case-insensitive substrings of the current
 // device name.
-bool is_known_device(const char* currentDeviceName) 
+bool is_known_device(const char* currentDeviceName)
 {
     if (currentDeviceName == nullptr) return false;
 
@@ -168,32 +169,34 @@ void show_detected_device_notification(const char *device_name)
 // pairing request, calls NotifyBtPairingResult(success), and that runs
 // ActivateAapSession — which is what actually gives AA the video focus.
 // Over wireless dongles at GAL 1.6 the phone deliberately skips that
-// pairing request, so the OEM parks at connect-mode 2 (pending-pair)
-// forever and video focus is never granted.
+// pairing request, so the OEM parks at state CONNECTED(2) forever and
+// video focus is never granted.
 //
 // This thread only ever runs for the dongle (the caller gates on
-// dev=="AAWireless", "smartBox" etc), so we watch for that exact stuck state. 
+// dev=="AAWireless", "smartBox" etc), so we watch for that exact stuck state.
 // Each poll:
-//   - if AA already holds video focus, or mode==3 (activated), a genuine
+//   - if AA already holds video focus, or state==ACTIVATED(3), a genuine
 //     activation happened (GAL 1.5, or a pairing that did arrive) — do
 //     nothing.
-//   - if mode==2 (pending-pair) — this is the dongle parked waiting for
+//   - if state==CONNECTED(2) — this is the dongle parked waiting for
 //     the missing BT pairing — call ActivateAapSession(cm) directly,
 //     once. That is exactly the activation the missing pairing-result
 //     path performs (StartResourcesControl, ResumeLastMode,
-//     NotifyBTConnectionComplete, mode:=3); it takes no precondition.
-//   - otherwise (mode 0 / transient) keep polling until the AOA session
-//     connects and mode becomes 2, up to the grace ceiling.
-// The connect-mode offset (0xdc) was empirically triangulated, so gating
-// on mode==2 is now safe. Single-flight guard + once-per-SETUP nature
-// prevent any double activation.
+//     NotifyBTConnectionComplete, state:=ACTIVATED(3)); it takes no
+//     precondition.
+//   - otherwise (state IDLE(0) / transient) keep polling until the AOA
+//     session connects and state becomes CONNECTED(2), up to the grace
+//     ceiling.
+// The session-state offset (0xdc) was empirically triangulated, so gating
+// on state==CONNECTED(2) is now safe. Single-flight guard + once-per-SETUP
+// nature prevent any double activation.
 void *activator_thread(void *)
 {
-    const int        kGraceTries = 30;     // ~3 s ceiling to reach mode==2
+    const int        kGraceTries = 30;     // ~3 s ceiling to reach CONNECTED(2)
     const useconds_t kStepUs     = 100000; // 100 ms poll interval
 
     LOGD("bt16pair: activator thread started (poll up to %d x %d ms for "
-         "connect-mode==2, then force ActivateAapSession)",
+         "state==CONNECTED(2), then force ActivateAapSession)",
          kGraceTries, static_cast<int>(kStepUs / 1000));
 
     bool injected = false;
@@ -202,31 +205,31 @@ void *activator_thread(void *)
         void *vm  = aap ? AapProc_GetVideoManager(aap) : nullptr;
         int   focus = vm ? VideoManager_IsAAVideoInFocus(vm) : 0;
         void *cm  = AapConnectionManager_instance();
-        int   mode = cm ? AapConnectionManager_connect_mode(cm) : -1;
+        int   state = cm ? AapConnectionManager_session_state(cm) : -1;
 
         LOGV("bt16pair: activator poll #%d/%d: aap=%p vm=%p focus=%d cm=%p "
-             "mode=%d", i + 1, kGraceTries, aap, vm, focus, cm, mode);
+             "state=%d", i + 1, kGraceTries, aap, vm, focus, cm, state);
 
         // Natural activation already happened — nothing to do.
-        if (focus || mode == kConnModeActivated) {
+        if (focus || state == kStateActivated) {
             LOGD("bt16pair: AA activated on its own after ~%d ms "
-                 "(focus=%d mode=%d); no inject needed", i * 100, focus, mode);
+                 "(focus=%d state=%d); no inject needed", i * 100, focus, state);
             break;
         }
 
         // The dongle-stuck state: AOA session up, parked waiting for a BT
         // pairing that will never arrive. Force the activation the OEM
         // would have run on pairing success.
-        if (cm && mode == kConnModePendingPair) {
-            LOGD("bt16pair: connect-mode==2 (pending-pair, dongle stuck) after "
+        if (cm && state == kStateConnected) {
+            LOGD("bt16pair: state==CONNECTED(2) (dongle stuck) after "
                  "~%d ms — forcing ActivateAapSession(cm=%p)", i * 100, cm);
             AapConnectionManager_ActivateAapSession(cm);
             injected = true;
 
             void *vm2 = aap ? AapProc_GetVideoManager(aap) : nullptr;
             int   f2  = vm2 ? VideoManager_IsAAVideoInFocus(vm2) : 0;
-            int   m2  = AapConnectionManager_connect_mode(cm);
-            LOGD("bt16pair: post-inject AA video focus=%d mode=%d", f2, m2);
+            int   s2  = AapConnectionManager_session_state(cm);
+            LOGD("bt16pair: post-inject AA video focus=%d state=%d", f2, s2);
             break;
         }
 
@@ -234,13 +237,13 @@ void *activator_thread(void *)
     }
 
     if (!injected) {
-        // Grace elapsed without ever seeing the pending-pair state (or a
-        // natural activation). The AOA session never reached mode==2, so
-        // there is nothing to activate — do NOT blind-inject.
-        void *cm   = AapConnectionManager_instance();
-        int   mode = cm ? AapConnectionManager_connect_mode(cm) : -1;
-        LOGD("bt16pair: grace window elapsed without connect-mode==2 "
-             "(final mode=%d); not injecting", mode);
+        // Grace elapsed without ever seeing the CONNECTED(2) state (or a
+        // natural activation). The AOA session never reached CONNECTED(2),
+        // so there is nothing to activate — do NOT blind-inject.
+        void *cm    = AapConnectionManager_instance();
+        int   state = cm ? AapConnectionManager_session_state(cm) : -1;
+        LOGD("bt16pair: grace window elapsed without state==CONNECTED(2) "
+             "(final state=%d); not injecting", state);
     }
 
     pthread_mutex_lock(&g_mu);
@@ -281,17 +284,23 @@ int our_projection_status_cb(void *user, int ev, void *data)
 {
     int rc = g_orig_proj_cb ? g_orig_proj_cb(user, ev, data) : 0;
 
+    // With wireless=true, aaw_session owns session activation. This bypass is
+    // for USB wireless-AA dongles; stand down to avoid a second activation.
+    if (libpatch_config::wireless_enabled()) {
+        return rc;
+    }
+
     // Per-invocation trace (verbose; every projection event reaches here).
-    // Resolve the connection manager / device name / connect mode for both
+    // Resolve the connection manager / device name / session state for both
     // the log and the SETUP gate below.
-    void       *cm   = AapConnectionManager_instance();
-    const char *dev  = cm ? AapConnectionManager_dev_name(cm) : nullptr;
-    int         mode = cm ? AapConnectionManager_connect_mode(cm) : -1;
+    void       *cm    = AapConnectionManager_instance();
+    const char *dev   = cm ? AapConnectionManager_dev_name(cm) : nullptr;
+    int         state = cm ? AapConnectionManager_session_state(cm) : -1;
     bool        all_devices = libpatch_config::bt_pairing_bypass_all_devices();
     LOGV("bt16pair: proj cb: ev=0x%x user=%p data=%p v1_6=%d cm=%p "
-            "dev=\"%s\" mode=%d all_devices=%d (orig_cb=%p rc=%d)",
+            "dev=\"%s\" state=%d all_devices=%d (orig_cb=%p rc=%d)",
          ev, user, data, libpatch_config::use_protocol_v1_6() ? 1 : 0, cm,
-            dev ? dev : "(null)", mode, all_devices ? 1 : 0,
+            dev ? dev : "(null)", state, all_devices ? 1 : 0,
          reinterpret_cast<void *>(g_orig_proj_cb), rc);
 
     if (ev != kAapProjectionSetup) {
@@ -312,7 +321,7 @@ int our_projection_status_cb(void *user, int ev, void *data)
     if (libpatch_config::bt_pairing_show_device_notification()) {
         show_detected_device_notification(dev);
     }
-    
+
     if (!all_devices && (!dev || !is_known_device(dev))) {
         LOGD("bt16pair: proj cb: SETUP but dev=\"%s\" is not known dongle; not arming",
              dev ? dev : "(null)");
@@ -320,9 +329,9 @@ int our_projection_status_cb(void *user, int ev, void *data)
     }
 
     LOGD("bt16pair: AAP_PROJECTION_SETUP on \"%s\" with use_protocol_v1_6 "
-        "(mode=%d all_devices=%d) — arming BT-pairing bypass",
-        dev ? dev : "(null)", mode, all_devices ? 1 : 0);
-        
+        "(state=%d all_devices=%d) — arming BT-pairing bypass",
+        dev ? dev : "(null)", state, all_devices ? 1 : 0);
+
     spawn_activator_once();
     return rc;
 }

@@ -82,8 +82,8 @@ jobs:
           fi
           "$gpp" --version | head -1
 
-      - name: Build (release + debug)
-        run: make -C mazda -j"$(nproc)" all
+      - name: Build (release + debug shims, wireless tools)
+        run: make -C mazda -j"$(nproc)" all tools
 
       - name: Package release + debug archives
         env:
@@ -106,12 +106,13 @@ jobs:
             stage="staging/${name}"
             mkdir -p "$stage"
             cp mazda/build/"$cfg"/libpatch-*.so "$stage/"
+            cp mazda/build/tools/aaw_handler mazda/build/tools/aaw_listend "$stage/"
             cp -r resources "$stage/"
             # Catch a build that "succeeds" but links for the wrong target.
-            for so in "$stage"/libpatch-*.so; do
+            for so in "$stage"/libpatch-*.so "$stage"/aaw_*; do
               file "$so"
               file "$so" | grep -q 'ELF 32-bit.*ARM' || {
-                echo "::error::$so is not an ARM shared object"; exit 1; }
+                echo "::error::$so is not an ARM binary"; exit 1; }
             done
             # Wrapper dir inside the archive avoids a zip-bomb on extract.
             ( cd staging && zip -r "../dist/${name}.zip" "$name" )
