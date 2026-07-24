@@ -85,12 +85,13 @@ bool is_known_device(const char* currentDeviceName)
 // set up. On a wired phone the OEM then receives the in-band Bluetooth
 // pairing request, calls NotifyBtPairingResult(success), and that runs
 // ActivateAapSession — which is what actually gives AA the video focus.
-// Over an AAWireless dongle at GAL 1.6 the phone deliberately skips that
+// Over wireless dongles at GAL 1.6 the phone deliberately skips that
 // pairing request, so the OEM parks at connect-mode 2 (pending-pair)
 // forever and video focus is never granted.
 //
 // This thread only ever runs for the dongle (the caller gates on
-// dev=="AAWireless"), so we watch for that exact stuck state. Each poll:
+// dev=="AAWireless", "smartBox" etc), so we watch for that exact stuck state. 
+// Each poll:
 //   - if AA already holds video focus, or mode==3 (activated), a genuine
 //     activation happened (GAL 1.5, or a pairing that did arrive) — do
 //     nothing.
