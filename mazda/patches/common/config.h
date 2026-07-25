@@ -33,12 +33,12 @@
 //   mute_pauses_phone = true|false    on a user mute, send Android Auto a media PAUSE (and a
 //                                     media PLAY on unmute) so the phone stops streaming while
 //                                     muted instead of only silencing the amp (default true)
+//   unmute_starts_playback = true|false
+//                                     send media PLAY on unmute even when this module did not
+//                                     pause media or AA lacks audio focus (default false)
 //   block_headunit_media_play = true|false
 //                                     block head-unit-generated Android Auto MEDIA_PLAY events
 //                                     and startup audio restoration (default false)
-//   bt_pairing_bypass_all_devices = true|false
-//                                     bypass the GAL 1.6 pairing gate without checking the USB
-//                                     device name (default false)
 //
 // Booleans are lenient (true/1/yes/on, false/0/no/off). hud_transport
 // also accepts "svcjcinavi" as an alias for "svcnavi".
@@ -221,8 +221,8 @@ struct Settings {
     bool         use_protocol_v1_6 = false;
     bool         aa_audio_low_latency = false;
     bool         mute_pauses_phone = true;
+    bool         unmute_starts_playback = false;
     bool         block_headunit_media_play = false;
-    bool         bt_pairing_bypass_all_devices = false;
     bool         loaded            = false;
 };
 
@@ -269,12 +269,11 @@ inline void apply_kv(const char *key, const char *val, void *ud)
         s.aa_audio_low_latency = parse_bool(val, s.aa_audio_low_latency);
     } else if (strcasecmp(key, "mute_pauses_phone") == 0) {
         s.mute_pauses_phone = parse_bool(val, s.mute_pauses_phone);
+    } else if (strcasecmp(key, "unmute_starts_playback") == 0) {
+        s.unmute_starts_playback = parse_bool(val, s.unmute_starts_playback);
     } else if (strcasecmp(key, "block_headunit_media_play") == 0) {
         s.block_headunit_media_play =
             parse_bool(val, s.block_headunit_media_play);
-    } else if (strcasecmp(key, "bt_pairing_bypass_all_devices") == 0) {
-        s.bt_pairing_bypass_all_devices =
-            parse_bool(val, s.bt_pairing_bypass_all_devices);
     } else {
         // Common schema: a key this library doesn't act on is not an
         // error, just informational.
@@ -288,7 +287,8 @@ inline void log_effective(const char *prefix)
     LOGD("config: %s touch=%s hud=%s hud_transport=%s force_street_name=%s "
             "hud_fold_latin=%s use_protocol_v1_6=%s aa_audio_low_latency=%s "
             "mute_pauses_phone=%s "
-            "block_headunit_media_play=%s bt_pairing_bypass_all_devices=%s",
+            "unmute_starts_playback=%s "
+         "block_headunit_media_play=%s",
          prefix,
          s.touch ? "true" : "false",
          s.hud   ? "true" : "false",
@@ -298,8 +298,8 @@ inline void log_effective(const char *prefix)
          s.use_protocol_v1_6 ? "true" : "false",
          s.aa_audio_low_latency ? "true" : "false",
          s.mute_pauses_phone ? "true" : "false",
-         s.block_headunit_media_play ? "true" : "false",
-         s.bt_pairing_bypass_all_devices ? "true" : "false");
+         s.unmute_starts_playback ? "true" : "false",
+         s.block_headunit_media_play ? "true" : "false");
 }
 
 // === Public API ===============================================
@@ -343,11 +343,8 @@ inline bool         hud_fold_latin() { return settings().hud_fold_latin; }
 inline bool         use_protocol_v1_6() { return settings().use_protocol_v1_6; }
 inline bool         aa_audio_low_latency() { return settings().aa_audio_low_latency; }
 inline bool         mute_pauses_phone() { return settings().mute_pauses_phone; }
+inline bool         unmute_starts_playback() { return settings().unmute_starts_playback; }
 inline bool         block_headunit_media_play() { return settings().block_headunit_media_play; }
-inline bool         bt_pairing_bypass_all_devices()
-{
-    return settings().bt_pairing_bypass_all_devices;
-}
 
 } // namespace libpatch_config
 

@@ -9,8 +9,8 @@
 // keycode, and the head unit never advertises one, so stock Android Auto is
 // never paused on mute. This module fills that gap:
 //
-//   user mute   -> KEYCODE_MEDIA_PAUSE (0x7f)  (only if AA media has focus)
-//   user unmute -> KEYCODE_MEDIA_PLAY  (0x7e)  (only if WE paused on mute)
+//   user mute   -> KEYCODE_MEDIA_PAUSE (0x7f)  (only if AA media is playing)
+//   user unmute -> KEYCODE_MEDIA_PLAY  (0x7e)  (normally only if WE paused)
 //
 // It can also suppress stock CMU-generated resume attempts. jciAAPA reloads
 // a per-phone `lastAudio` flag from SerialID_AA, while MMUI sends
@@ -53,9 +53,10 @@
 // source change while muted (AA loses focus) can't spuriously resume AA.
 //
 // Configured independently in libpatch.conf: `mute_pauses_phone` controls the
-// session-lifecycle-bracketed mute watcher, while
+// session-lifecycle-bracketed mute watcher. `unmute_starts_playback` lets an
+// unmute start playback even if we did not pause it or AA lacks focus, while
 // `block_headunit_media_play` controls the process-wide preload hooks. Both
-// default off in code.
+// of these overrides default off in code.
 
 #define LOG_TAG "PLAYPAUSE"
 #include "../log.h"
@@ -368,17 +369,20 @@ void on_mute_changed(bool muted)
         if (send_media_key(kAAPKeyMediaPause))
             g_we_paused = true;
     } else {
-        if (!g_we_paused) {
+        const bool skip_checks = libpatch_config::unmute_starts_playback();
+        if (!skip_checks && !g_we_paused) {
             LOGV("unmute: we did not pause — ignoring");
             return;
         }
-        if (!aa_media_in_focus()) {
+        if (!skip_checks && !aa_media_in_focus()) {
             // Source switched away while muted; abandon the pending resume so
             // we never resume AA in the background.
             LOGD("unmute: AA media not in focus — dropping pending resume");
             g_we_paused = false;
             return;
         }
+        if (skip_checks)
+            LOGD("unmute: skipping pause-latch and audio-focus checks");
         // Clear the latch ONLY once the PLAY is delivered, so a rejected resume
         // is retried on the next unmute rather than silently lost.
         if (send_media_key(kAAPKeyMediaPlay))
