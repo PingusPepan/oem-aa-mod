@@ -17,9 +17,10 @@
 // "AA connected" SBN notification, no video focus, and the dongle
 // detaches after ~5 s.
 //
-// This module closes that gap. When nav_1_6 is enabled AND the connected
-// USB device name is "AAWireless", it synthesizes the missing activation
-// by calling the OEM's AapConnectionManager::ActivateAapSession(cm)
+// This module closes that gap. When GAL 1.6 is enabled AND the connected
+// USB device name matches a known dongle (or the all-devices config override
+// is enabled), it synthesizes the missing activation by calling the OEM's
+// AapConnectionManager::ActivateAapSession(cm)
 // directly, once the session reaches the pending-pairing state
 // (connect mode == 2, read live from AapConnectionManager+0xdc). That is
 // the exact activation a real BT-pairing success would perform
@@ -31,7 +32,7 @@
 // wireless-1.6 case. Confirmed working on-device (FW 74.00.324A NA).
 //
 // Wired connections and non-1.6 configs are unaffected: the wrapper
-// passes through and the "AAWireless" / nav_1_6 gates simply don't match.
+// passes through and the device-name / GAL 1.6 gates simply don't match.
 
 #ifndef LIBPATCH_BLMJCIAAPA_BT16PAIR_BT16PAIR_H
 #define LIBPATCH_BLMJCIAAPA_BT16PAIR_BT16PAIR_H

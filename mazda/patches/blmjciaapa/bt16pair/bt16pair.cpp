@@ -12,6 +12,8 @@
 #include "common/thread_util.h"
 
 #include <pthread.h>
+#include <algorithm>
+#include <cctype>
 #include <string.h>
 #include <unistd.h>
 
@@ -40,7 +42,10 @@ constexpr int kAapProjectionSetup = 0x403;
 // model name (e.g. "Pixel 9 Pro XL") instead.
 constexpr char const *kDongleDevNames[] = {
     "AAWireless",
-    "smartBox"
+    "smartBox",
+    "carplay",
+    "carlink",
+    "motorolama1"
 };
 
 // AapConnectionManager connect-mode values (instance + 0xdc). Offset and
@@ -63,8 +68,8 @@ ProjStatusFn g_orig_proj_cb = nullptr;
 pthread_mutex_t g_mu = PTHREAD_MUTEX_INITIALIZER;
 bool g_activator_running = false;
 
-// Helper function to iterate over kDongleDevNames against
-// current device.
+// Match known dongle names as case-insensitive substrings of the current
+// device name.
 bool is_known_device(const char* currentDeviceName) 
 {
     if (currentDeviceName == nullptr) return false;
@@ -72,7 +77,15 @@ bool is_known_device(const char* currentDeviceName)
     const size_t elementCount = sizeof(kDongleDevNames) / sizeof(kDongleDevNames[0]);
 
     for (size_t i = 0; i < elementCount; ++i) {
-        if (strcmp(currentDeviceName, kDongleDevNames[i]) == 0) {
+        const char *knownName = kDongleDevNames[i];
+        const char *match = std::search(
+            currentDeviceName, currentDeviceName + strlen(currentDeviceName),
+            knownName, knownName + strlen(knownName),
+            [](char left, char right) {
+                return std::tolower(static_cast<unsigned char>(left)) ==
+                       std::tolower(static_cast<unsigned char>(right));
+            });
+        if (match != currentDeviceName + strlen(currentDeviceName)) {
             return true;
         }
     }
@@ -205,10 +218,11 @@ int our_projection_status_cb(void *user, int ev, void *data)
     void       *cm   = AapConnectionManager_instance();
     const char *dev  = cm ? AapConnectionManager_dev_name(cm) : nullptr;
     int         mode = cm ? AapConnectionManager_connect_mode(cm) : -1;
+        bool        all_devices = libpatch_config::bt_pairing_bypass_all_devices();
     LOGV("bt16pair: proj cb: ev=0x%x user=%p data=%p v1_6=%d cm=%p "
-         "dev=\"%s\" mode=%d (orig_cb=%p rc=%d)",
+            "dev=\"%s\" mode=%d all_devices=%d (orig_cb=%p rc=%d)",
          ev, user, data, libpatch_config::use_protocol_v1_6() ? 1 : 0, cm,
-         dev ? dev : "(null)", mode,
+            dev ? dev : "(null)", mode, all_devices ? 1 : 0,
          reinterpret_cast<void *>(g_orig_proj_cb), rc);
 
     if (ev != kAapProjectionSetup) {
@@ -225,14 +239,17 @@ int our_projection_status_cb(void *user, int ev, void *data)
              "not arming");
         return rc;
     }
-    if (!dev || !is_known_device(dev)) {
+    
+    if (!all_devices && (!dev || !is_known_device(dev))) {
         LOGD("bt16pair: proj cb: SETUP but dev=\"%s\" is not known dongle; not arming",
              dev ? dev : "(null)");
         return rc;
     }
 
-    LOGD("bt16pair: AAP_PROJECTION_SETUP on \"%s\" with use_protocol_v1_6 (mode=%d) — "
-         "arming BT-pairing bypass", dev, mode);
+    LOGD("bt16pair: AAP_PROJECTION_SETUP on \"%s\" with use_protocol_v1_6 "
+        "(mode=%d all_devices=%d) — arming BT-pairing bypass",
+        dev ? dev : "(null)", mode, all_devices ? 1 : 0);
+        
     spawn_activator_once();
     return rc;
 }
