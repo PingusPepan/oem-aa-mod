@@ -39,6 +39,9 @@
 //   block_headunit_media_play = true|false
 //                                     block head-unit-generated Android Auto MEDIA_PLAY events
 //                                     and startup audio restoration (default false)
+//   bt_pairing_bypass_all_devices = true|false
+//                                     bypass the GAL 1.6 pairing gate without checking the USB
+//                                     device name (default false)
 //
 // Booleans are lenient (true/1/yes/on, false/0/no/off). hud_transport
 // also accepts "svcjcinavi" as an alias for "svcnavi".
@@ -223,6 +226,7 @@ struct Settings {
     bool         mute_pauses_phone = true;
     bool         unmute_starts_playback = false;
     bool         block_headunit_media_play = false;
+    bool         bt_pairing_bypass_all_devices = false;
     bool         loaded            = false;
 };
 
@@ -274,6 +278,9 @@ inline void apply_kv(const char *key, const char *val, void *ud)
     } else if (strcasecmp(key, "block_headunit_media_play") == 0) {
         s.block_headunit_media_play =
             parse_bool(val, s.block_headunit_media_play);
+    } else if (strcasecmp(key, "bt_pairing_bypass_all_devices") == 0) {
+        s.bt_pairing_bypass_all_devices =
+            parse_bool(val, s.bt_pairing_bypass_all_devices);
     } else {
         // Common schema: a key this library doesn't act on is not an
         // error, just informational.
@@ -288,7 +295,7 @@ inline void log_effective(const char *prefix)
             "hud_fold_latin=%s use_protocol_v1_6=%s aa_audio_low_latency=%s "
             "mute_pauses_phone=%s "
             "unmute_starts_playback=%s "
-         "block_headunit_media_play=%s",
+            "block_headunit_media_play=%s bt_pairing_bypass_all_devices=%s",
          prefix,
          s.touch ? "true" : "false",
          s.hud   ? "true" : "false",
@@ -299,7 +306,8 @@ inline void log_effective(const char *prefix)
          s.aa_audio_low_latency ? "true" : "false",
          s.mute_pauses_phone ? "true" : "false",
          s.unmute_starts_playback ? "true" : "false",
-         s.block_headunit_media_play ? "true" : "false");
+         s.block_headunit_media_play ? "true" : "false",
+         s.bt_pairing_bypass_all_devices ? "true" : "false");
 }
 
 // === Public API ===============================================
@@ -345,6 +353,7 @@ inline bool         aa_audio_low_latency() { return settings().aa_audio_low_late
 inline bool         mute_pauses_phone() { return settings().mute_pauses_phone; }
 inline bool         unmute_starts_playback() { return settings().unmute_starts_playback; }
 inline bool         block_headunit_media_play() { return settings().block_headunit_media_play; }
+inline bool         bt_pairing_bypass_all_devices() { return settings().bt_pairing_bypass_all_devices; }
 
 } // namespace libpatch_config
 

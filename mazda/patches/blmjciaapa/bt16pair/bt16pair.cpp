@@ -218,7 +218,7 @@ int our_projection_status_cb(void *user, int ev, void *data)
     void       *cm   = AapConnectionManager_instance();
     const char *dev  = cm ? AapConnectionManager_dev_name(cm) : nullptr;
     int         mode = cm ? AapConnectionManager_connect_mode(cm) : -1;
-        bool        all_devices = libpatch_config::bt_pairing_bypass_all_devices();
+    bool        all_devices = libpatch_config::bt_pairing_bypass_all_devices();
     LOGV("bt16pair: proj cb: ev=0x%x user=%p data=%p v1_6=%d cm=%p "
             "dev=\"%s\" mode=%d all_devices=%d (orig_cb=%p rc=%d)",
          ev, user, data, libpatch_config::use_protocol_v1_6() ? 1 : 0, cm,
