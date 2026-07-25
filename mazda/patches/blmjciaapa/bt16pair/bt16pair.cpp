@@ -15,6 +15,8 @@
 #include <string.h>
 #include <unistd.h>
 
+#include <string>
+
 namespace {
 
 // cb_list slot 3 = RaceAap::ProjectionStatusCb(void* user, int ev,
@@ -34,9 +36,12 @@ constexpr int kCbListProjSlot = 3;
 constexpr int kAapProjectionSetup = 0x403;
 
 // USB device name (AapConnectionManager + 0x54) presented by the
-// AAWireless dongle in passthrough mode. A wired phone reports its own
+// wireless dongle in passthrough mode. A wired phone reports its own
 // model name (e.g. "Pixel 9 Pro XL") instead.
-constexpr char kDongleDevName[] = "AAWireless";
+constexpr char const *kDongleDevNames[] = {
+    "AAWireless",
+    "smartBox"
+};
 
 // AapConnectionManager connect-mode values (instance + 0xdc). Offset and
 // semantics EMPIRICALLY pinned by a 3-state /proc/mem object diff
@@ -58,18 +63,35 @@ ProjStatusFn g_orig_proj_cb = nullptr;
 pthread_mutex_t g_mu = PTHREAD_MUTEX_INITIALIZER;
 bool g_activator_running = false;
 
+// Helper function to iterate over kDongleDevNames against
+// current device.
+bool is_known_device(const char* currentDeviceName) 
+{
+    if (currentDeviceName == nullptr) return false;
+
+    const size_t elementCount = sizeof(kDongleDevNames) / sizeof(kDongleDevNames[0]);
+
+    for (size_t i = 0; i < elementCount; ++i) {
+        if (strcmp(currentDeviceName, kDongleDevNames[i]) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
 // Deferred activator.
 //
 // The ProjectionStatusCb runs on the SDK IPC thread when projection is
 // set up. On a wired phone the OEM then receives the in-band Bluetooth
 // pairing request, calls NotifyBtPairingResult(success), and that runs
 // ActivateAapSession — which is what actually gives AA the video focus.
-// Over an AAWireless dongle at GAL 1.6 the phone deliberately skips that
+// Over wireless dongles at GAL 1.6 the phone deliberately skips that
 // pairing request, so the OEM parks at connect-mode 2 (pending-pair)
 // forever and video focus is never granted.
 //
 // This thread only ever runs for the dongle (the caller gates on
-// dev=="AAWireless"), so we watch for that exact stuck state. Each poll:
+// dev=="AAWireless", "smartBox" etc), so we watch for that exact stuck state. 
+// Each poll:
 //   - if AA already holds video focus, or mode==3 (activated), a genuine
 //     activation happened (GAL 1.5, or a pairing that did arrive) — do
 //     nothing.
@@ -203,9 +225,9 @@ int our_projection_status_cb(void *user, int ev, void *data)
              "not arming");
         return rc;
     }
-    if (!dev || strcmp(dev, kDongleDevName) != 0) {
-        LOGD("bt16pair: proj cb: SETUP but dev=\"%s\" != \"%s\"; not arming",
-             dev ? dev : "(null)", kDongleDevName);
+    if (!dev || !is_known_device(dev)) {
+        LOGD("bt16pair: proj cb: SETUP but dev=\"%s\" is not known dongle; not arming",
+             dev ? dev : "(null)");
         return rc;
     }
 
