@@ -42,6 +42,9 @@
 //   bt_pairing_bypass_all_devices = true|false
 //                                     bypass the GAL 1.6 pairing gate without checking the USB
 //                                     device name (default false)
+//   bt_pairing_show_device_notification = true|false
+//                                     show the detected USB device name in a status-bar
+//                                     notification before applying the pairing gate (default false)
 //
 // Booleans are lenient (true/1/yes/on, false/0/no/off). hud_transport
 // also accepts "svcjcinavi" as an alias for "svcnavi".
@@ -227,6 +230,7 @@ struct Settings {
     bool         unmute_starts_playback = false;
     bool         block_headunit_media_play = false;
     bool         bt_pairing_bypass_all_devices = false;
+    bool         bt_pairing_show_device_notification = false;
     bool         loaded            = false;
 };
 
@@ -281,6 +285,9 @@ inline void apply_kv(const char *key, const char *val, void *ud)
     } else if (strcasecmp(key, "bt_pairing_bypass_all_devices") == 0) {
         s.bt_pairing_bypass_all_devices =
             parse_bool(val, s.bt_pairing_bypass_all_devices);
+    } else if (strcasecmp(key, "bt_pairing_show_device_notification") == 0) {
+        s.bt_pairing_show_device_notification =
+            parse_bool(val, s.bt_pairing_show_device_notification);
     } else {
         // Common schema: a key this library doesn't act on is not an
         // error, just informational.
@@ -295,7 +302,8 @@ inline void log_effective(const char *prefix)
             "hud_fold_latin=%s use_protocol_v1_6=%s aa_audio_low_latency=%s "
             "mute_pauses_phone=%s "
             "unmute_starts_playback=%s "
-            "block_headunit_media_play=%s bt_pairing_bypass_all_devices=%s",
+            "block_headunit_media_play=%s bt_pairing_bypass_all_devices=%s "
+            "bt_pairing_show_device_notification=%s",
          prefix,
          s.touch ? "true" : "false",
          s.hud   ? "true" : "false",
@@ -307,7 +315,8 @@ inline void log_effective(const char *prefix)
          s.mute_pauses_phone ? "true" : "false",
          s.unmute_starts_playback ? "true" : "false",
          s.block_headunit_media_play ? "true" : "false",
-         s.bt_pairing_bypass_all_devices ? "true" : "false");
+         s.bt_pairing_bypass_all_devices ? "true" : "false",
+         s.bt_pairing_show_device_notification ? "true" : "false");
 }
 
 // === Public API ===============================================
@@ -354,6 +363,7 @@ inline bool         mute_pauses_phone() { return settings().mute_pauses_phone; }
 inline bool         unmute_starts_playback() { return settings().unmute_starts_playback; }
 inline bool         block_headunit_media_play() { return settings().block_headunit_media_play; }
 inline bool         bt_pairing_bypass_all_devices() { return settings().bt_pairing_bypass_all_devices; }
+inline bool         bt_pairing_show_device_notification() { return settings().bt_pairing_show_device_notification; }
 
 } // namespace libpatch_config
 

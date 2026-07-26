@@ -9,11 +9,14 @@
 
 #include "common/config.h"        // libpatch_config::use_protocol_v1_6()
 #include "../oem/blmjciaapa.h"    // AapConnectionManager_* accessors
+#include "../oem/libdbus.h"
 #include "common/thread_util.h"
 
 #include <pthread.h>
 #include <algorithm>
 #include <cctype>
+#include <cstdlib>
+#include <cstdio>
 #include <string.h>
 #include <unistd.h>
 
@@ -57,6 +60,13 @@ constexpr int kConnModeIdle        = 0;
 constexpr int kConnModePendingPair = 2;
 constexpr int kConnModeActivated   = 3;
 
+constexpr const char *kServiceBusFallback =
+    "unix:path=/tmp/dbus_service_socket";
+constexpr const char *kNotificationPath = "/com/NNG/Api/Server";
+constexpr const char *kNotificationIface =
+    "com.NNG.Api.Server.NotificationBar";
+constexpr const char *kNotificationMember = "ETCNotification";
+
 // Original OEM ProjectionStatusCb, saved when we wrap slot 3. RaceAap::Init
 // builds the cb_list once per BLM process, so a single global suffices.
 typedef int (*ProjStatusFn)(void *user, int ev, void *data);
@@ -90,6 +100,70 @@ bool is_known_device(const char* currentDeviceName)
         }
     }
     return false;
+}
+
+void show_detected_device_notification(const char *device_name)
+{
+    if (device_name == nullptr || device_name[0] == '\0') {
+        return;
+    }
+
+    const char *address = getenv("JCI_SERVICE_BUS");
+    if (address == nullptr || address[0] == '\0') {
+        address = kServiceBusFallback;
+    }
+
+    void *conn = dbus_connection_open_private(address, nullptr);
+    if (conn == nullptr) {
+        LOGW("bt16pair: could not open service bus for device notification");
+        return;
+    }
+    dbus_connection_set_exit_on_disconnect(conn, 0);
+    if (dbus_bus_register(conn, nullptr) == 0) {
+        LOGW("bt16pair: could not register device-notification bus connection");
+        dbus_connection_close(conn);
+        dbus_connection_unref(conn);
+        return;
+    }
+
+    void *msg = dbus_message_new_signal(
+        kNotificationPath, kNotificationIface, kNotificationMember);
+    if (msg == nullptr) {
+        LOGW("bt16pair: could not allocate device-notification signal");
+        dbus_connection_close(conn);
+        dbus_connection_unref(conn);
+        return;
+    }
+
+    char text[160];
+    snprintf(text, sizeof(text), "Detected device: '%.142s'", device_name);
+    const char *text1 = text;
+    const char *text2 = "";
+    // Generated callback ABI is int32,string,string,int32 (not bool for beep).
+    int32_t notification_type = 0;
+    int32_t play_beep = 0;
+    DBusMessageIter iter;
+    dbus_message_iter_init_append(msg, &iter);
+    bool marshalled =
+        dbus_message_iter_append_basic(
+            &iter, DBUS_TYPE_INT32, &notification_type) != 0 &&
+        dbus_message_iter_append_basic(&iter, DBUS_TYPE_STRING, &text1) != 0 &&
+        dbus_message_iter_append_basic(&iter, DBUS_TYPE_STRING, &text2) != 0 &&
+        dbus_message_iter_append_basic(
+            &iter, DBUS_TYPE_INT32, &play_beep) != 0;
+
+    if (!marshalled) {
+        LOGW("bt16pair: could not marshal device-notification signal");
+    } else if (dbus_connection_send(conn, msg, nullptr) == 0) {
+        LOGW("bt16pair: could not send device-notification signal");
+    } else {
+        dbus_connection_flush(conn);
+        LOGD("bt16pair: displayed detected device notification: \"%s\"", text);
+    }
+
+    dbus_message_unref(msg);
+    dbus_connection_close(conn);
+    dbus_connection_unref(conn);
 }
 
 // Deferred activator.
@@ -238,6 +312,10 @@ int our_projection_status_cb(void *user, int ev, void *data)
         LOGW("bt16pair: proj cb: SETUP but AapConnectionManager unavailable; "
              "not arming");
         return rc;
+    }
+
+    if (libpatch_config::bt_pairing_show_device_notification()) {
+        show_detected_device_notification(dev);
     }
     
     if (!all_devices && (!dev || !is_known_device(dev))) {
