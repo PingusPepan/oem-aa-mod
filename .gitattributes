@@ -1,0 +1,5 @@
+# The stock syssettingsApp.js is CRLF, so its patch carries CR on every payload
+# line and BusyBox patch has no fuzz to forgive a mismatch. Store it byte-for-byte:
+# line-ending normalisation (core.autocrlf, text=auto) would strip the CRs and
+# the hunk would no longer apply on the unit.
+resources/gui/syssettingsApp.js.patch -text

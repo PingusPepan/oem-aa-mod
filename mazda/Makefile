@@ -113,12 +113,25 @@ RELEASE_DIR := $(BUILD_DIR)/release
 DEBUG_LIBS   := $(addprefix $(DEBUG_DIR)/libpatch-,$(addsuffix .so,$(PATCHES)))
 RELEASE_LIBS := $(addprefix $(RELEASE_DIR)/libpatch-,$(addsuffix .so,$(PATCHES)))
 
-.PHONY: all debug release clean $(PATCHES) $(addsuffix -debug,$(PATCHES))
+# jciDbapi plugins: build/<cfg>/libdbapi<name>.so. Declared here because the
+# debug/release goals list them as prerequisites, which are expanded as the rule is
+# read. Compile and link rules are in the dbapi section below.
+DBAPI_DIR     := dbapi
+DBAPI_PLUGINS := aamod
+DEBUG_DBAPI   := $(addprefix $(DEBUG_DIR)/libdbapi,$(addsuffix .so,$(DBAPI_PLUGINS)))
+RELEASE_DBAPI := $(addprefix $(RELEASE_DIR)/libdbapi,$(addsuffix .so,$(DBAPI_PLUGINS)))
+
+# Must be phony: a dbapi/ directory exists, so make would otherwise call the
+# target up to date.
+.PHONY: all debug release clean dbapi dbapi-debug \
+        $(PATCHES) $(addsuffix -debug,$(PATCHES))
 .DEFAULT_GOAL := release
 
 all: debug release
-debug: $(DEBUG_LIBS)
-release: $(RELEASE_LIBS)
+# Part of a config's output, not a separate step, so a plain `make` produces
+# everything that gets deployed.
+debug: $(DEBUG_LIBS) $(DEBUG_DBAPI)
+release: $(RELEASE_LIBS) $(RELEASE_DBAPI)
 
 # Convenience aliases:
 #   `make blmjciaapa`        -> build/release/libpatch-blmjciaapa.so
@@ -158,6 +171,41 @@ $(RELEASE_DIR)/libpatch-$(1).so: $$(RELEASE_OBJS_$(1))
 endef
 
 $(foreach p,$(PATCHES),$(eval $(call gen_patch_rules,$(p))))
+
+# ---------------------------------------------------------------------------
+# jciDbapi plugins (dbapi/<name>.cpp -> build/<cfg>/libdbapi<name>.so). Not
+# LD_PRELOAD shims: jciDbapi is a plugin host that dlopen()s
+# /jci/dbapi/plugins/libdbapi<name>.so per <plugin name="<name>"/> — the GUI's route
+# to native code, see dbapi/dbapi_plugin.h. The filename prefix is the host's.
+#
+# Same flags as the patches (toolchain, pre-C++11 std::string ABI, -Ipatches) plus
+# -Idbapi. jansson is bound at runtime, not linked, so -Wl,--no-undefined holds.
+DBAPI_CXXFLAGS := -I$(DBAPI_DIR)
+
+$(DEBUG_DIR)/dbapi/%.o: $(DBAPI_DIR)/%.cpp
+	@mkdir -p $(@D)
+	$(CXX) -MD $(DEBUG_CXXFLAGS) $(DBAPI_CXXFLAGS) -c $< -o $@
+
+$(RELEASE_DIR)/dbapi/%.o: $(DBAPI_DIR)/%.cpp
+	@mkdir -p $(@D)
+	$(CXX) -MD $(RELEASE_CXXFLAGS) $(DBAPI_CXXFLAGS) -c $< -o $@
+
+define gen_dbapi_rules
+$(DEBUG_DIR)/libdbapi$(1).so: $(DEBUG_DIR)/dbapi/$(1).o
+	$$(CXX) $$^ $$(DEBUG_LDFLAGS) -Wl,-soname,libdbapi$(1).so -o $$@
+
+$(RELEASE_DIR)/libdbapi$(1).so: $(RELEASE_DIR)/dbapi/$(1).o
+	$$(CXX) $$^ $$(RELEASE_LDFLAGS) -Wl,-soname,libdbapi$(1).so -o $$@
+
+-include $(DEBUG_DIR)/dbapi/$(1).d
+-include $(RELEASE_DIR)/dbapi/$(1).d
+endef
+
+$(foreach p,$(DBAPI_PLUGINS),$(eval $(call gen_dbapi_rules,$(p))))
+
+# Convenience aliases: `make dbapi` / `make dbapi-debug`.
+dbapi: $(RELEASE_DBAPI)
+dbapi-debug: $(DEBUG_DBAPI)
 
 clean:
 	rm -rf $(BUILD_DIR)

@@ -1,7 +1,7 @@
 name: CI
 
 # Catches breakage before a release tag is cut: runs the host self-tests
-# (test/nav16_test), then builds both configs and packages the same two
+# (test/), then builds both configs and packages the same two
 # tarballs the release workflow ships (versioned by short SHA instead of
 # a tag), so what CI produces matches a real release.
 # Tag pushes are intentionally NOT built here — release.yml owns those.
@@ -22,10 +22,11 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Host self-tests — pure g++ builds that run on the runner itself, so
-  # this job needs no cross toolchain and reports independently of the
-  # (slower) ARM build job. Only nav16_test qualifies: gsi_test/lane_test
-  # are on-device ARM tools (lane_test also needs a local-only dbus header).
+  # Host self-tests — pure g++ builds plus one node script, run on the
+  # runner itself, so this job needs no cross toolchain and reports
+  # independently of the (slower) ARM build job. gsi_test/lane_test are
+  # on-device ARM tools (lane_test also needs a local-only dbus header), so
+  # they are not here.
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -44,6 +45,19 @@ jobs:
 
       - name: Run config_test
         run: ./test/build/config_test
+
+      # Run from the repo root: its default fixture is resources/libpatch.conf.
+      - name: Build confwrite_test (host g++)
+        run: make -C test confwrite_test
+
+      - name: Run confwrite_test
+        run: ./test/build/confwrite_test
+
+      # The Settings screen against stubbed OEM framework, plus the audit that
+      # the screen, config.h and libpatch.conf agree on the key set. Node is
+      # preinstalled on the runner; the test has no dependencies.
+      - name: Run Settings screen test (node)
+        run: node test/gui/aamod_settings_test.js
 
   build:
     runs-on: ubuntu-latest
@@ -116,9 +130,13 @@ jobs:
             stage="staging/${name}"
             mkdir -p "$stage"
             cp mazda/build/"$cfg"/libpatch-*.so "$stage/"
+            # The optional jciDbapi plugin behind the on-unit Settings screen.
+            # Different prefix because the host derives the filename from the
+            # plugin name: /jci/dbapi/plugins/libdbapi<name>.so.
+            cp mazda/build/"$cfg"/libdbapi*.so "$stage/"
             cp -r resources "$stage/"
             # Catch a build that "succeeds" but links for the wrong target.
-            for so in "$stage"/libpatch-*.so; do
+            for so in "$stage"/libpatch-*.so "$stage"/libdbapi*.so; do
               file "$so"
               file "$so" | grep -q 'ELF 32-bit.*ARM' || {
                 echo "::error::$so is not an ARM shared object"; exit 1; }

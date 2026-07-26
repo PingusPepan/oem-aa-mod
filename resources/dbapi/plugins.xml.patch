@@ -1,0 +1,12 @@
+--- a/plugins.xml
++++ b/plugins.xml
+@@ -6,4 +6,9 @@
+     </plugin>
+     <plugin name="radio">
+     </plugin>
++    <!-- ADDED: oem-aa-mod. libdbapiaamod.so backs the Settings screen
++         (api "aamod", GetConfig / SetConfig on libpatch.conf). The host
++         builds the filename from this name. No <dependency>: it only
++         touches a file, so it can come up with jciDbapi. -->
++    <plugin name="aamod"/>
+ </plugins>

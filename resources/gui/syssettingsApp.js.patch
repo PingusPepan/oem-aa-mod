@@ -1,0 +1,16 @@
+--- a/syssettingsApp.js
++++ b/syssettingsApp.js
+@@ -187,6 +187,13 @@
+     {
+         utility.loadScript("apps/syssettings/test/syssettingsAppTest.js");
+     }
++
++    // oem-aa-mod: the "Android Auto Mod" screen (Settings > System). That file
++    // installs itself by wrapping this prototype, so this is the mod's only
++    // change here. charset is explicit: it carries translated strings and over
++    // file:// there is no HTTP charset to inherit.
++    utility.loadScript("apps/syssettings/aamod/aaModSettings.js",
++                       { charset : "UTF-8" });
+     
+     /* 
+      * NOTE:
