@@ -633,21 +633,18 @@ static void nav16_emit_if_changed()
 static void nav16_on_guidance(const AaGuidance *g)
 {
 #if LOG_LEVEL <= LOG_LEVEL_VERBOSE
-    char line[320]; hud_nav16_format_guidance(g, line, sizeof(line)); LOGV("%s", line);
+    char line[320];
+    hud_nav16_format_guidance(g, line, sizeof(line), libpatch_config::roundabout_guess_exit_icon());
+    LOGV("%s", line);
 #endif
     AaNav16HudState &acc = g_nav16_acc;
 
-    uint32_t glyph = hud_nav16_glyph(g);
+    uint32_t glyph = hud_nav16_glyph(g, libpatch_config::roundabout_guess_exit_icon());
     if (glyph > 60) glyph = 0;                          // clamp untrusted glyph
 
-    // Fold once here, at road ingest, not in the per-emit forwarder — distance
-    // ticks re-emit the road far more often than 0x8006 changes it. Fold a local
-    // copy (g is const, decoder-owned); strncpy into acc.road zero-pads the tail
-    // so a shorter road leaves no stale bytes for the memcmp change-gate to trip
-    // on (at worst a harmless extra emit, but free to avoid).
     char road[sizeof(acc.road)];
-    strncpy(road, g->road, sizeof(road) - 1);
-    road[sizeof(road) - 1] = '\0';
+    hud_nav16_road_with_exit(g, libpatch_config::roundabout_prepend_exit_number(),
+                             road, sizeof(road));
     if (libpatch_config::hud_fold_latin()) hud_translit::fold(road);
 
     // A different maneuver means the held distance belongs to the PREVIOUS step
