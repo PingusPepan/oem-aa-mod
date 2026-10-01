@@ -107,7 +107,8 @@ void trampoline(void *conn, uint8_t value, void *user_data)
 {
     Subscription *sub = static_cast<Subscription *>(user_data);
     if (sub == nullptr || sub->cb == nullptr) {
-        LOGW("callback fired with no recorded OEM callback — dropping");
+        LOGW("callback fired with no recorded OEM callback — dropping (%s)",
+             sub != nullptr ? sub->what : "unknown subscription");
         return;
     }
 
@@ -164,10 +165,17 @@ void ensure_gate()
     // The armed case is the one a stock build's log has to be able to
     // answer, so it alone is release-visible
     if (g_enabled) {
-        LOGE("compass gate: ENABLED — NoSpeedRestrict_enable=%p, "
-             "GetTouchDisplayCarSpeedThrshld=%p",
-             reinterpret_cast<void *>(g_real_enable),
-             reinterpret_cast<void *>(g_real_get));
+        if (g_real_enable != nullptr && g_real_get != nullptr) {
+            LOGE("compass gate: ENABLED — NoSpeedRestrict_enable=%p, "
+                 "GetTouchDisplayCarSpeedThrshld=%p",
+                 reinterpret_cast<void *>(g_real_enable),
+                 reinterpret_cast<void *>(g_real_get));
+        } else {
+            LOGE("compass gate: armed but PARTIALLY resolved — "
+                 "NoSpeedRestrict_enable=%p, GetTouchDisplayCarSpeedThrshld=%p",
+                 reinterpret_cast<void *>(g_real_enable),
+                 reinterpret_cast<void *>(g_real_get));
+        }
     } else {
         LOGD("compass gate: transparent passthrough (armed=%d, "
              "svcjcinavi.so %s)", (int)g_armed,
