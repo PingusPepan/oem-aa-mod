@@ -46,6 +46,7 @@ constexpr int kAapProjectionSetup = 0x403;
 constexpr char const *kDongleDevNames[] = {
     "AAWireless",
     "smartBox",
+    "smartlinkBox",
     "carplay",
     "carlink",
     "motorolama1",
