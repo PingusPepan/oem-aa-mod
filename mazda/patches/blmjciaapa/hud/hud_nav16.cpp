@@ -209,17 +209,24 @@ const char *kManeuver[] = {
     "MERGE_LEFT","MERGE_RIGHT","MERGE_SIDE_UNSPECIFIED","ROUNDABOUT_ENTER",
     "ROUNDABOUT_EXIT","RA_ENTER_EXIT_CW","RA_ENTER_EXIT_CW_ANGLE","RA_ENTER_EXIT_CCW",
     "RA_ENTER_EXIT_CCW_ANGLE","STRAIGHT","FERRY_BOAT","FERRY_TRAIN","DESTINATION",
-    "DESTINATION_STRAIGHT","DESTINATION_LEFT","DESTINATION_RIGHT",
+    "DESTINATION_STRAIGHT","DESTINATION_LEFT","DESTINATION_RIGHT","RA_ENTER_CW",
+    "RA_EXIT_CW","RA_ENTER_CCW","RA_EXIT_CCW","FERRY_BOAT_LEFT","FERRY_BOAT_RIGHT",
+    "FERRY_TRAIN_LEFT","FERRY_TRAIN_RIGHT",
 };
 
-// AA NavigationType (0..42) -> Mazda HUD glyph. Values cross-referenced to the
+// AA NavigationType (0..50) -> Mazda HUD glyph. Values cross-referenced to the
 // MazdaIcon 1.5 glyph atlas in hud_nav.h (the road-validated reference table);
 // KEEP_LEFT/RIGHT are FORK glyphs (NNG-confirmed). On-ramps reuse the turn
 // glyphs by severity/side (no dedicated on-ramp glyph). Roundabout ENTER_AND_EXIT
 // (32..35) are resolved by exit angle in hud_nav16_glyph(), NOT from this table;
 // the entries here are unused fallbacks.
-const uint8_t kManeuverGlyph[43] = {
-    /* 0  UNKNOWN                */ HUD_EMPTY,
+//
+// 43..50 come from the AA app's own maneuver list (open-android-auto
+// ManeuverTypeEnum.proto, AA v16.1). A roundabout ENTER step names no exit —
+// the exit is a separate EXIT step, which may not follow — so ENTER is
+// drawn straight ahead. Leaving a counterclockwise roundabout bears right,
+// leaving a clockwise one bears left.
+const uint8_t kManeuverGlyph[51] = {
     /* 0  UNKNOWN                */ HUD_BLANK,
     /* 1  DEPART                 */ HUD_FLAG,
     /* 2  NAME_CHANGE            */ HUD_STRAIGHT,
@@ -263,6 +270,14 @@ const uint8_t kManeuverGlyph[43] = {
     /* 40 DESTINATION_STRAIGHT   */ HUD_DESTINATION,
     /* 41 DESTINATION_LEFT       */ HUD_DESTINATION_LEFT,
     /* 42 DESTINATION_RIGHT      */ HUD_DESTINATION_RIGHT,
+    /* 43 RA_ENTER_CW            */ HUD_STRAIGHT,
+    /* 44 RA_EXIT_CW             */ HUD_LEFT,
+    /* 45 RA_ENTER_CCW           */ HUD_STRAIGHT,
+    /* 46 RA_EXIT_CCW            */ HUD_RIGHT,
+    /* 47 FERRY_BOAT_LEFT        */ HUD_FERRY_BOAT,  // the HUD has no sided ferry glyph
+    /* 48 FERRY_BOAT_RIGHT       */ HUD_FERRY_BOAT,
+    /* 49 FERRY_TRAIN_LEFT       */ HUD_FERRY_TRAIN,
+    /* 50 FERRY_TRAIN_RIGHT      */ HUD_FERRY_TRAIN,
 };
 
 // Roundabout exit glyph by angle. The Mazda HUD ECU has 12 directional glyphs
