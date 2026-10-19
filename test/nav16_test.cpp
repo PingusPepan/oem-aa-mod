@@ -454,6 +454,23 @@ int main()
         }
     }
 
+    // --- Type outside 0..42: raw maneuver bytes in the log line --------------
+    {
+        printf("[13] maneuver type 45 -> HUD_EMPTY + raw maneuver bytes\n");
+        auto s = hx("80 06 0a 06 0a 04 08 2d 10 02");   // type 45, exit 2
+        AaGuidance g;
+        hud_nav16_on_frame(s.data(), (int)s.size(), &g, nullptr);
+        hud_nav16_format_guidance(&g, buf, sizeof(buf));
+        printf("  %s\n", buf);
+        CHECK_EQ_U(hud_nav16_glyph(&g), 18u, "glyph (HUD_EMPTY)");
+        CHECK(strstr(buf, " man[4: 08 2d 10 02]") != nullptr, "raw maneuver bytes logged");
+
+        auto k = hx("80 06 0a 04 0a 02 08 22");           // type 34
+        hud_nav16_on_frame(k.data(), (int)k.size(), &g, nullptr);
+        hud_nav16_format_guidance(&g, buf, sizeof(buf));
+        CHECK(strstr(buf, " man[") == nullptr, "known type -> no raw dump");
+    }
+
     printf("\n%s\n", g_fail ? "RESULT: FAIL" : "RESULT: PASS");
     return g_fail;
 }

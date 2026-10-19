@@ -38,6 +38,9 @@ struct AaGuidance {
                                        // indistinguishable, and they mean different
                                        // things: the protocol's angle range is
                                        // (0, 360], so 0 only ever means "not sent"
+    uint8_t  maneuver_raw[64];         // NavigationManeuver bytes as received (first 64)
+    uint16_t maneuver_raw_size;        // their full length; logged for types outside
+                                       // 0..42, whose fields are not known
     char     road[64];                 // NavigationRoad.name (UTF-8)
     int      n_steps;                  // total steps present (diagnostic)
     int      n_lanes;                  // lanes on step[0] (0..8)

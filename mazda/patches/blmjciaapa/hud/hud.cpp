@@ -772,7 +772,7 @@ static void nav16_emit_if_changed()
 static void nav16_on_guidance(const AaGuidance *g)
 {
 #if LOG_LEVEL <= LOG_LEVEL_VERBOSE
-    char line[320];
+    char line[768];
     hud_nav16_format_guidance(g, line, sizeof(line));
     LOGV("%s", line);
 #endif
