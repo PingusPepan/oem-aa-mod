@@ -773,12 +773,12 @@ static void nav16_on_guidance(const AaGuidance *g)
 {
 #if LOG_LEVEL <= LOG_LEVEL_VERBOSE
     char line[320];
-    hud_nav16_format_guidance(g, line, sizeof(line), libpatch_config::roundabout_guess_exit_icon());
+    hud_nav16_format_guidance(g, line, sizeof(line));
     LOGV("%s", line);
 #endif
     AaNav16HudState &acc = g_nav16_acc;
 
-    uint32_t glyph = hud_nav16_glyph(g, libpatch_config::roundabout_guess_exit_icon());
+    uint32_t glyph = hud_nav16_glyph(g);
     if (glyph > 60) glyph = 0;                          // clamp untrusted glyph
 
     // Fold once here, at road ingest, not in the per-emit forwarder — distance

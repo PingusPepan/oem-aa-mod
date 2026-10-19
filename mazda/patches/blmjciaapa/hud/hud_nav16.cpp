@@ -303,10 +303,9 @@ int32_t exit_number_angle(int32_t exit_number)
 // never inferred from the vehicle or the market. The estimate above is
 // handedness-independent because the angle increments in the driving direction
 // in both banks, so left-hand-traffic roundabouts need no separate table.
-int32_t roundabout_angle(const AaGuidance *g, bool guess_exit_icon)
+int32_t roundabout_angle(const AaGuidance *g)
 {
     if (g->have_exit_angle) return g->roundabout_exit_angle;
-    if (!guess_exit_icon) return 0;   // no estimate -> index-0 (pre-estimate) glyph
     return exit_number_angle(g->have_exit_number ? g->roundabout_exit_number : 0);
 }
 
@@ -319,14 +318,14 @@ static const char *hud_nav16_maneuver_name(uint32_t t)
     return (t < sizeof(kManeuver)/sizeof(kManeuver[0])) ? kManeuver[t] : "?";
 }
 
-uint8_t hud_nav16_glyph(const AaGuidance *g, bool guess_exit_icon)
+uint8_t hud_nav16_glyph(const AaGuidance *g)
 {
     if (!g) return HUD_BLANK;
     switch (g->maneuver_type) {
         case 32: case 33:  // RA_ENTER_EXIT_CW (clockwise = left-hand traffic)
-            return roundabout_glyph(roundabout_angle(g, guess_exit_icon), /*clockwise=*/true);
+            return roundabout_glyph(roundabout_angle(g), /*clockwise=*/true);
         case 34: case 35:  // RA_ENTER_EXIT_CCW (counterclockwise = right-hand traffic)
-            return roundabout_glyph(roundabout_angle(g, guess_exit_icon), /*clockwise=*/false);
+            return roundabout_glyph(roundabout_angle(g), /*clockwise=*/false);
         default:
             return (g->maneuver_type < 43) ? kManeuverGlyph[g->maneuver_type] : HUD_EMPTY;
     }
@@ -455,12 +454,12 @@ bool hud_nav16_read_status(const uint8_t *raw, int size, int *status_out)
     return false;   // field 1 not present
 }
 
-int hud_nav16_format_guidance(const AaGuidance *g, char *buf, int cap, bool guess_exit_icon)
+int hud_nav16_format_guidance(const AaGuidance *g, char *buf, int cap)
 {
     if (!g || !buf || cap <= 0) return 0;
     int o = snprintf(buf, cap, "nav16 STATE: maneuver=%u(%s) glyph=%u road=\"%s\" steps=%d lanes=%d",
                           g->maneuver_type, hud_nav16_maneuver_name(g->maneuver_type),
-                          hud_nav16_glyph(g, guess_exit_icon),
+                          hud_nav16_glyph(g),
                           g->road, g->n_steps, g->n_lanes);
     for (int i = 0; i < g->n_lanes && o < cap; ++i)
         o += snprintf(buf + o, cap - o, " [L%d pres=0x%03x hi=0x%03x]",

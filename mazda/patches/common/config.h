@@ -34,8 +34,6 @@
 //                                     1.6 navigation protocol (maneuver / lanes / distance)
 //                                     instead of the 1.5 turn events; read by aap_service
 //                                     (default false = stock 1.5)
-//   roundabout_guess_exit_icon = true|false (GAL 1.6; default false)
-//                                     estimate a glyph angle when the exit angle is absent
 //   roundabout_prepend_exit_number = true|false (GAL 1.6; default false)
 //                                     show the exit number before the street name
 //                                     when the exit angle is absent
@@ -291,7 +289,6 @@ struct Settings {
     bool         hud_fold_latin    = true;
     uint32_t     hud_maneuver_max_distance_m = 0;
     bool         use_protocol_v1_6 = false;
-    bool         roundabout_guess_exit_icon = false;
     bool         roundabout_prepend_exit_number = false;
     bool         aa_audio_low_latency = false;
     bool         mute_pauses_phone = true;
@@ -344,8 +341,6 @@ inline void apply_kv(const char *key, const char *val, void *ud)
             parse_nonnegative_meters(val, s.hud_maneuver_max_distance_m);
     } else if (strcasecmp(key, "use_protocol_v1_6") == 0) {
         s.use_protocol_v1_6 = parse_bool(val, s.use_protocol_v1_6);
-    } else if (strcasecmp(key, "roundabout_guess_exit_icon") == 0) {
-        s.roundabout_guess_exit_icon = parse_bool(val, s.roundabout_guess_exit_icon);
     } else if (strcasecmp(key, "roundabout_prepend_exit_number") == 0) {
         s.roundabout_prepend_exit_number = parse_bool(val, s.roundabout_prepend_exit_number);
     } else if (strcasecmp(key, "aa_audio_low_latency") == 0) {
@@ -375,7 +370,7 @@ inline void log_effective(const char *prefix)
     const Settings &s = settings();
     LOGD("config: %s touch=%s hud=%s hud_transport=%s force_street_name=%s "
             "hud_fold_latin=%s hud_maneuver_max_distance_m=%u "
-            "use_protocol_v1_6=%s roundabout_guess_exit_icon=%s "
+            "use_protocol_v1_6=%s "
             "roundabout_prepend_exit_number=%s aa_audio_low_latency=%s "
             "mute_pauses_phone=%s "
             "unmute_starts_playback=%s "
@@ -389,7 +384,6 @@ inline void log_effective(const char *prefix)
          s.hud_fold_latin ? "true" : "false",
          static_cast<unsigned>(s.hud_maneuver_max_distance_m),
          s.use_protocol_v1_6 ? "true" : "false",
-         s.roundabout_guess_exit_icon ? "true" : "false",
          s.roundabout_prepend_exit_number ? "true" : "false",
          s.aa_audio_low_latency ? "true" : "false",
          s.mute_pauses_phone ? "true" : "false",
@@ -439,7 +433,6 @@ inline bool         force_street_name() { return settings().force_street_name; }
 inline bool         hud_fold_latin() { return settings().hud_fold_latin; }
 inline uint32_t     hud_maneuver_max_distance_m() { return settings().hud_maneuver_max_distance_m; }
 inline bool         use_protocol_v1_6() { return settings().use_protocol_v1_6; }
-inline bool         roundabout_guess_exit_icon() { return settings().roundabout_guess_exit_icon; }
 inline bool         roundabout_prepend_exit_number() { return settings().roundabout_prepend_exit_number; }
 inline bool         aa_audio_low_latency() { return settings().aa_audio_low_latency; }
 inline bool         mute_pauses_phone() { return settings().mute_pauses_phone; }
