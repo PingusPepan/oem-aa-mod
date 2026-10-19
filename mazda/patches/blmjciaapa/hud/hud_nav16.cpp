@@ -220,6 +220,7 @@ const char *kManeuver[] = {
 // the entries here are unused fallbacks.
 const uint8_t kManeuverGlyph[43] = {
     /* 0  UNKNOWN                */ HUD_EMPTY,
+    /* 0  UNKNOWN                */ HUD_BLANK,
     /* 1  DEPART                 */ HUD_FLAG,
     /* 2  NAME_CHANGE            */ HUD_STRAIGHT,
     /* 3  KEEP_LEFT              */ HUD_FORK_LEFT,
@@ -256,8 +257,8 @@ const uint8_t kManeuverGlyph[43] = {
     /* 34 RA_ENTER_EXIT_CCW      */ HUD_STRAIGHT,
     /* 35 RA_ENTER_EXIT_CCW_ANG  */ HUD_STRAIGHT,
     /* 36 STRAIGHT               */ HUD_STRAIGHT,
-    /* 37 FERRY_BOAT             */ HUD_EMPTY,       // no glyph
-    /* 38 FERRY_TRAIN            */ HUD_EMPTY,
+    /* 37 FERRY_BOAT             */ HUD_FERRY_BOAT,
+    /* 38 FERRY_TRAIN            */ HUD_FERRY_TRAIN,
     /* 39 DESTINATION            */ HUD_DESTINATION,
     /* 40 DESTINATION_STRAIGHT   */ HUD_DESTINATION,
     /* 41 DESTINATION_LEFT       */ HUD_DESTINATION_LEFT,
@@ -332,7 +333,7 @@ uint8_t hud_nav16_glyph(const AaGuidance *g)
         case 34: case 35:  // RA_ENTER_EXIT_CCW (counterclockwise = right-hand traffic)
             return roundabout_glyph(roundabout_angle(g), /*clockwise=*/false);
         default:
-            return (g->maneuver_type < 43) ? kManeuverGlyph[g->maneuver_type] : HUD_EMPTY;
+            return (g->maneuver_type < sizeof(kManeuverGlyph)) ? kManeuverGlyph[g->maneuver_type] : HUD_BLANK;
     }
 }
 
@@ -479,7 +480,7 @@ int hud_nav16_format_guidance(const AaGuidance *g, char *buf, int cap)
         else                     snprintf(an, sizeof an, "none");
         o += snprintf(buf + o, cap - o, " ra[exit=%s angle=%s]", ex, an);
     }
-    // A type outside AA's NavigationType (0..42) renders HUD_EMPTY and its fields
+    // A type outside AA's NavigationType (0..50) renders HUD_BLANK and its fields
     // are not known, so echo the maneuver bytes exactly as received.
     if (g->maneuver_type >= sizeof(kManeuverGlyph) && o > 0 && o < cap) {
         size_t n = g->maneuver_raw_size < sizeof(g->maneuver_raw)
