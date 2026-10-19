@@ -27,7 +27,7 @@ struct AaLane {
 // Decoded NavigationState (the active/first step — the next maneuver).
 struct AaGuidance {
     bool     have_maneuver;
-    uint32_t maneuver_type;            // NavigationManeuver.NavigationType, 0..42
+    uint32_t maneuver_type;            // NavigationManeuver.NavigationType, 0..50
     int32_t  roundabout_exit_number;   // field 2 — 1-based, in circulation order;
                                        // 0 when absent (see have_exit_number)
     bool     have_exit_number;         // field 2 was on the wire
@@ -40,7 +40,7 @@ struct AaGuidance {
                                        // (0, 360], so 0 only ever means "not sent"
     uint8_t  maneuver_raw[64];         // NavigationManeuver bytes as received (first 64)
     uint16_t maneuver_raw_size;        // their full length; logged for types outside
-                                       // 0..42, whose fields are not known
+                                       // 0..50, whose fields are not known
     char     road[64];                 // NavigationRoad.name (UTF-8)
     int      n_steps;                  // total steps present (diagnostic)
     int      n_lanes;                  // lanes on step[0] (0..8)
