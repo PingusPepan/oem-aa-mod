@@ -214,7 +214,7 @@ const char *kManeuver[] = {
 // (32..35) are resolved by exit angle in hud_nav16_glyph(), NOT from this table;
 // the entries here are unused fallbacks.
 const uint8_t kManeuverGlyph[43] = {
-    /* 0  UNKNOWN                */ HUD_EMPTY,
+    /* 0  UNKNOWN                */ HUD_STRAIGHT,   // every no-glyph id also blanks street + distance
     /* 1  DEPART                 */ HUD_FLAG,
     /* 2  NAME_CHANGE            */ HUD_STRAIGHT,
     /* 3  KEEP_LEFT              */ HUD_FORK_LEFT,
@@ -251,8 +251,8 @@ const uint8_t kManeuverGlyph[43] = {
     /* 34 RA_ENTER_EXIT_CCW      */ HUD_STRAIGHT,
     /* 35 RA_ENTER_EXIT_CCW_ANG  */ HUD_STRAIGHT,
     /* 36 STRAIGHT               */ HUD_STRAIGHT,
-    /* 37 FERRY_BOAT             */ HUD_EMPTY,       // no glyph
-    /* 38 FERRY_TRAIN            */ HUD_EMPTY,
+    /* 37 FERRY_BOAT             */ HUD_FERRY_BOAT,
+    /* 38 FERRY_TRAIN            */ HUD_FERRY_TRAIN,
     /* 39 DESTINATION            */ HUD_DESTINATION,
     /* 40 DESTINATION_STRAIGHT   */ HUD_DESTINATION,
     /* 41 DESTINATION_LEFT       */ HUD_DESTINATION_LEFT,
@@ -327,7 +327,7 @@ uint8_t hud_nav16_glyph(const AaGuidance *g)
         case 34: case 35:  // RA_ENTER_EXIT_CCW (counterclockwise = right-hand traffic)
             return roundabout_glyph(roundabout_angle(g), /*clockwise=*/false);
         default:
-            return (g->maneuver_type < 43) ? kManeuverGlyph[g->maneuver_type] : HUD_EMPTY;
+            return (g->maneuver_type < sizeof(kManeuverGlyph)) ? kManeuverGlyph[g->maneuver_type] : HUD_STRAIGHT;
     }
 }
 

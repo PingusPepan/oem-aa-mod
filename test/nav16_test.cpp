@@ -392,6 +392,18 @@ int main()
         }
     }
 
+    // --- Steps the HUD has no glyph for -> straight, never the stop marker 0 -
+    {
+        printf("[13] UNKNOWN / unmapped maneuver -> HUD_STRAIGHT\n");
+        AaGuidance g;
+        auto u = hx("80 06 0a 04 0a 02 08 00");           // type 0 UNKNOWN
+        hud_nav16_on_frame(u.data(), (int)u.size(), &g, nullptr);
+        CHECK_EQ_U(hud_nav16_glyph(&g), 1u, "0 UNKNOWN -> HUD_STRAIGHT");
+        auto x = hx("80 06 0a 04 0a 02 08 7f");           // type 127, not in the table
+        hud_nav16_on_frame(x.data(), (int)x.size(), &g, nullptr);
+        CHECK_EQ_U(hud_nav16_glyph(&g), 1u, "127 unmapped -> HUD_STRAIGHT");
+    }
+
     printf("\n%s\n", g_fail ? "RESULT: FAIL" : "RESULT: PASS");
     return g_fail;
 }
