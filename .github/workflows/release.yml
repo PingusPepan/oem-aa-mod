@@ -149,12 +149,12 @@ jobs:
       # GitHub validates permissions for every nested job, including the
       # workflow_dispatch-only publish-self job that is skipped here.
       contents: write
-    uses: Bijan-A/oem-aa-mod-installer/.github/workflows/build-installer.yml@5915bd65b66355458d301e3c274f316d5152e369
+    uses: Bijan-A/oem-aa-mod-installer/.github/workflows/build-installer.yml@5fe51331bba52f7d12971617a9989bec43fa828f
     with:
       upstream_tag: ${{ github.ref_name }}
       upstream_repo: ${{ github.repository }}
       installer_repo: Bijan-A/oem-aa-mod-installer
-      installer_ref: 8d28ba0c630466f75c98eadb3a888918a8f8053c
+      installer_ref: 5fe51331bba52f7d12971617a9989bec43fa828f
 
   publish:
     needs: build-installer
