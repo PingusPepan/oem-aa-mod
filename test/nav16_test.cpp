@@ -392,6 +392,85 @@ int main()
         }
     }
 
+    // --- Parenthesized exit number in the street name -----------------------
+    {
+        printf("[12] roundabout_prepend_exit_number\n");
+        char road[64];
+        auto s = hx("80 06 0a 14 0a 04 08 22 10 02"
+                    " 12 05 0a 03 34 32 32 22 05 0a 03 34 32 32");
+        AaGuidance g;
+        hud_nav16_on_frame(s.data(), (int)s.size(), &g, nullptr);
+
+        for (int i = 1; i <= 9; ++i) {
+            g.roundabout_exit_number = i;
+            hud_nav16_road_with_exit(&g, /*prepend=*/true, road, sizeof(road));
+            char expected[16];
+            snprintf(expected, sizeof(expected), "(%d) 422", i);
+            CHECK_EQ_S(road, expected, "filled parenthesized exit number 1..9");
+        }
+
+        g.roundabout_exit_number = 10;
+        hud_nav16_road_with_exit(&g, /*prepend=*/true, road, sizeof(road));
+        CHECK_EQ_S(road, "422", "exit above 9 is omitted");
+
+        g.roundabout_exit_number = 2;
+
+        hud_nav16_road_with_exit(&g, /*prepend=*/false, road, sizeof(road));
+        CHECK_EQ_S(road, "422", "prepend off -> road unchanged");
+
+        auto a = hx("80 06 0a 16 0a 06 08 22 10 02 18 5a"
+                    " 12 05 0a 03 34 32 32 22 05 0a 03 34 32 32");
+        hud_nav16_on_frame(a.data(), (int)a.size(), &g, nullptr);
+        hud_nav16_road_with_exit(&g, /*prepend=*/true, road, sizeof(road));
+        CHECK_EQ_S(road, "422", "angle present -> no prefix even with prepend on");
+
+        auto t = hx("80 06 0a 0c 0a 04 08 08 10 02 12 04 0a 02 42 42");
+        hud_nav16_on_frame(t.data(), (int)t.size(), &g, nullptr);
+        hud_nav16_road_with_exit(&g, /*prepend=*/true, road, sizeof(road));
+        CHECK_EQ_S(road, "BB", "non-roundabout -> no prefix");
+
+        char small[8];
+        auto s2 = hx("80 06 0a 06 0a 04 08 22 10 02");
+        hud_nav16_on_frame(s2.data(), (int)s2.size(), &g, nullptr);
+        strncpy(g.road, "LONGROADNAME", sizeof(g.road) - 1);
+        hud_nav16_road_with_exit(&g, /*prepend=*/true, small, sizeof(small));
+        CHECK_EQ_U(strlen(small), sizeof(small) - 1, "truncated to buffer capacity");
+        CHECK_EQ_S(small, "(2) LON", "parenthesized prefix truncates with road name");
+
+        {
+            auto z = hx("80 06 0a 14 0a 04 08 22 10 00"
+                        " 12 05 0a 03 34 32 32 22 05 0a 03 34 32 32");
+            hud_nav16_on_frame(z.data(), (int)z.size(), &g, nullptr);
+            CHECK(g.have_exit_number, "exit 0 is present on the wire");
+            hud_nav16_road_with_exit(&g, /*prepend=*/true, road, sizeof(road));
+            CHECK_EQ_S(road, "422", "exit 0 -> no prefix (1-based)");
+
+            auto neg = hx("80 06 0a 18 0a 08 08 22 10 80 80 80 80 08"
+                          " 12 05 0a 03 34 32 32 22 05 0a 03 34 32 32");
+            hud_nav16_on_frame(neg.data(), (int)neg.size(), &g, nullptr);
+            CHECK(g.roundabout_exit_number < 0, "hostile varint casts negative");
+            hud_nav16_road_with_exit(&g, /*prepend=*/true, road, sizeof(road));
+            CHECK_EQ_S(road, "422", "out-of-range exit -> no prefix, road intact");
+        }
+    }
+
+    // --- Type outside 0..42: raw maneuver bytes in the log line --------------
+    {
+        printf("[13] maneuver type 45 -> HUD_EMPTY + raw maneuver bytes\n");
+        auto s = hx("80 06 0a 06 0a 04 08 2d 10 02");   // type 45, exit 2
+        AaGuidance g;
+        hud_nav16_on_frame(s.data(), (int)s.size(), &g, nullptr);
+        hud_nav16_format_guidance(&g, buf, sizeof(buf));
+        printf("  %s\n", buf);
+        CHECK_EQ_U(hud_nav16_glyph(&g), 18u, "glyph (HUD_EMPTY)");
+        CHECK(strstr(buf, " man[4: 08 2d 10 02]") != nullptr, "raw maneuver bytes logged");
+
+        auto k = hx("80 06 0a 04 0a 02 08 22");           // type 34
+        hud_nav16_on_frame(k.data(), (int)k.size(), &g, nullptr);
+        hud_nav16_format_guidance(&g, buf, sizeof(buf));
+        CHECK(strstr(buf, " man[") == nullptr, "known type -> no raw dump");
+    }
+
     printf("\n%s\n", g_fail ? "RESULT: FAIL" : "RESULT: PASS");
     return g_fail;
 }

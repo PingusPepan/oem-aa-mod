@@ -38,6 +38,9 @@ struct AaGuidance {
                                        // indistinguishable, and they mean different
                                        // things: the protocol's angle range is
                                        // (0, 360], so 0 only ever means "not sent"
+    uint8_t  maneuver_raw[64];         // NavigationManeuver bytes as received (first 64)
+    uint16_t maneuver_raw_size;        // their full length; logged for types outside
+                                       // 0..42, whose fields are not known
     char     road[64];                 // NavigationRoad.name (UTF-8)
     int      n_steps;                  // total steps present (diagnostic)
     int      n_lanes;                  // lanes on step[0] (0..8)
@@ -65,6 +68,10 @@ uint32_t hud_nav16_on_frame(const uint8_t *raw, int size, AaGuidance *g, AaPosit
 // 37..60 for roundabouts by exit angle). The single source of truth for the
 // AA -> HUD maneuver pairing.
 uint8_t hud_nav16_glyph(const AaGuidance *g);
+
+// Format the road name, optionally prefixing an exit number (1..9).
+void hud_nav16_road_with_exit(const AaGuidance *g, bool prepend_exit_number,
+                              char *dst, size_t cap);
 
 // Format the road name, optionally prefixing an exit number (1..9).
 void hud_nav16_road_with_exit(const AaGuidance *g, bool prepend_exit_number,

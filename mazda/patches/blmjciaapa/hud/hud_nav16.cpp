@@ -141,7 +141,12 @@ void dec_step(const uint8_t *b, size_t n, AaGuidance &g)
     while (rd_tag(c, f, w)) {
         if (w == 2) {
             const uint8_t *d; size_t l; if (!rd_bytes(c, d, l)) break;
-            if      (f == 1) dec_maneuver(d, l, g);
+            if      (f == 1) {
+                g.maneuver_raw_size = (uint16_t)(l < 0xffff ? l : 0xffff);
+                std::memcpy(g.maneuver_raw, d,
+                            l < sizeof(g.maneuver_raw) ? l : sizeof(g.maneuver_raw));
+                dec_maneuver(d, l, g);
+            }
             else if (f == 2) {
                 // Road name is truncated to sizeof(g.road) here at wire-ingest, before
                 // any fold() in nav16_on_guidance. For long Vietnamese names with many
@@ -473,6 +478,17 @@ int hud_nav16_format_guidance(const AaGuidance *g, char *buf, int cap)
         if (g->have_exit_angle)  snprintf(an, sizeof an, "%d", g->roundabout_exit_angle);
         else                     snprintf(an, sizeof an, "none");
         o += snprintf(buf + o, cap - o, " ra[exit=%s angle=%s]", ex, an);
+    }
+    // A type outside AA's NavigationType (0..42) renders HUD_EMPTY and its fields
+    // are not known, so echo the maneuver bytes exactly as received.
+    if (g->maneuver_type >= sizeof(kManeuverGlyph) && o > 0 && o < cap) {
+        size_t n = g->maneuver_raw_size < sizeof(g->maneuver_raw)
+                 ? g->maneuver_raw_size : sizeof(g->maneuver_raw);
+        o += snprintf(buf + o, cap - o, " man[%u:", (unsigned)g->maneuver_raw_size);
+        for (size_t i = 0; i < n && o < cap; ++i)
+            o += snprintf(buf + o, cap - o, " %02x", g->maneuver_raw[i]);
+        if (o < cap)
+            o += snprintf(buf + o, cap - o, "%s]", g->maneuver_raw_size > n ? " ..." : "");
     }
     return o;
 }
