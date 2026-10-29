@@ -18,6 +18,8 @@ make -C mazda svcjcinavi         # release build of the other patch
 make -C mazda svcjcinavi-debug   # debug build of the other patch
 make -C mazda aap_service        # release build of the aap_service patch
 make -C mazda aap_service-debug  # debug build of the aap_service patch
+make -C mazda dbapi              # release build of just the jciDbapi plugin
+make -C mazda dbapi-debug        # debug build of just the jciDbapi plugin
 make -C mazda clean
 ```
 
@@ -28,6 +30,18 @@ per patch — currently `libpatch-blmjciaapa.so`, `libpatch-svcjcinavi.so`,
 and `libpatch-aap_service.so`). The `libpatch-` prefix is project convention
 so a quick `ls /jci/lib/libpatch-*` on the device shows everything we
 ship without colliding with stock OEM libraries.
+
+`debug` and `release` also build the jciDbapi plugins from `mazda/dbapi/`
+(currently `libdbapiaamod.so`), so a plain `make -C mazda` produces everything
+that gets deployed. These are **not** `LD_PRELOAD` shims: `jciDbapi`
+(`/jci/dbapi/svcjcidbapi.so`) is a plugin host that the Opera GUI reaches over
+`ws://127.0.0.1:2766`, and it derives each plugin's filename from the `name` in
+`/jci/dbapi/plugins.xml` — hence the fixed `libdbapi` prefix, which is the host's
+choice rather than ours. `libdbapiaamod.so` is what lets the on-unit Settings
+screen read and write `libpatch.conf`; see
+[installation.md](installation.md#optional-edit-libpatchconf-from-the-head-unit)
+and [`mazda/dbapi/dbapi_plugin.h`](../mazda/dbapi/dbapi_plugin.h), which
+documents the host ABI the plugin implements.
 
 ## Adding a new patch target
 

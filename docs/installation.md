@@ -21,10 +21,14 @@ oem-aa-mod-<version>/
   libpatch-blmjciaapa.so              # -> /data_persist/oem-aa-mod/
   libpatch-svcjcinavi.so              # -> /data_persist/oem-aa-mod/ (optional; HUD merge + compass)
   libpatch-aap_service.so             # -> /data_persist/oem-aa-mod/ (optional; protocol v1.6)
+  libdbapiaamod.so                    # -> /jci/dbapi/plugins/ (optional; on-unit settings screen)
   resources/
     aap_system_attributes.xml         # -> /etc/
     aap_system_attributes_UCP.xml     # -> /etc/
     libpatch.conf                     # -> /data_persist/oem-aa-mod/ (optional; runtime config)
+    gui/aaModSettings.js              # -> /jci/gui/apps/syssettings/aamod/ (optional; settings screen)
+    gui/syssettingsApp.js.patch       # one added line in the OEM Settings app
+    dbapi/plugins.xml.patch           # one added line in /jci/dbapi/plugins.xml
 ```
 
 These shims are per-service `LD_PRELOAD` libraries, each scoped to the
@@ -317,6 +321,224 @@ After editing `libpatch.conf`, restart the affected service(s) —
 `use_protocol_v1_6` or `aa_audio_low_latency` — or reboot for the change to take effect.
 The config is read once at library load.
 
+## Optional: edit `libpatch.conf` from the head unit
+
+Everything above configures the mod by editing `libpatch.conf` over ssh. You can
+instead get a **Settings → System → Android Auto Mod** screen on the unit that
+reads and writes the same file, so the on/off keys can be flipped from the
+touchscreen.
+
+It is entirely optional and independent of the shims: nothing above needs it, and
+it changes no shim behaviour — it only edits the file the shims already read.
+
+### How it works
+
+The Opera GUI has no filesystem access; it can only talk to its three
+WebSockets. One of them, `ws://127.0.0.1:2766`, is **`jciDbapi`**, and `jciDbapi`
+is a plugin host: it reads `/jci/dbapi/plugins.xml` and `dlopen`s
+`/jci/dbapi/plugins/libdbapi<name>.so` for each `<plugin name="<name>"/>`, then
+calls into it whenever a GUI app does
+`framework.sendRequestToDbapi(uiaId, cb, "<name>", "<method>", params)`.
+
+So there are three pieces, and no new daemon or listening port:
+
+| Piece | Where it goes | What it does |
+| --- | --- | --- |
+| `libdbapiaamod.so` | `/jci/dbapi/plugins/` | The plugin. `GetConfig` returns the exposed keys with their current effective values; `SetConfig` validates one key/value against that same list and rewrites the line(s) of `libpatch.conf` that set it. |
+| `plugins.xml` line | `/jci/dbapi/` | Registers the plugin under the api name `aamod`. |
+| `aaModSettings.js` | `/jci/gui/apps/syssettings/aamod/` | The screen. Adds the row, renders whatever `GetConfig` hands back, calls `SetConfig` on a toggle. |
+
+The screen does **not** add an MMUI context — that would mean patching
+`libjciuiasyssettings.so`. It borrows the OEM `About` context: the new row sends
+the OEM's own `SelectAbout` event, MMUI performs its ordinary
+`SystemTab → About` transition, and the list is dressed with the mod's title and
+rows for that one visit. So the back button, focus stack and at-speed lockout all
+behave exactly as the OEM's. The real About screen is untouched — its own row
+still opens version info.
+
+The mod's change to the OEM `syssettingsApp.js` is **one added `loadScript`
+line**; every wrapper lives in `aaModSettings.js`.
+
+### What it exposes
+
+On this branch, **every key** `libpatch.conf` has: the thirteen booleans — `touch`,
+`hud`, `force_street_name`, `hud_fold_latin`, `use_protocol_v1_6`,
+`roundabout_prepend_exit_number`, `compass_always_on`,
+`bt_pairing_bypass_all_devices`, `bt_pairing_show_device_notification`,
+`mute_pauses_phone`, `unmute_starts_playback`, `block_headunit_media_play`,
+`aa_audio_low_latency` — plus the one two-way choice,
+`hud_transport` (`svcnavi` / `vbs`).
+
+`hud_maneuver_max_distance_m` is **shown but not editable**: the row reads its
+current value (in metres, or "Always" for 0), and the plugin refuses any write to it.
+Change it in the file.
+
+Free-text keys are deliberately **not** editable here and stay file-only: they
+would need the OEM keyboard control on a second borrowed MMUI context, and a
+typo'd value entered on a touchscreen is a worse failure than editing the file
+over ssh. (There are none on this branch — the wireless-AA branches add
+`aa_ssid`, `aa_psk`, `aa_ap_ip`, … which the screen leaves alone.)
+
+`SetConfig` rejects any key not in the plugin's own schema, so the screen cannot
+write arbitrary config. The schema lives in one table in
+[`mazda/dbapi/aamod.cpp`](../mazda/dbapi/aamod.cpp) — exposing a newly added key
+is a change to that table and nothing else, since the GUI renders whatever
+`GetConfig` hands it and never names a key itself.
+
+Because the key set differs per branch, `test/gui/aamod_settings_test.js` audits
+it: it fails if the screen exposes a key `common/config.h` does not parse (a
+toggle that writes a line no shim reads), if an exposed key has no English label,
+or if a label survives for a key that is gone — and it prints which keys
+`config.h` parses but the screen leaves file-only. Run it after any rebase.
+
+Keys the file does not set are shown at their built-in default, and changing one
+appends it (under a marker comment) rather than rewriting the file — your
+comments, ordering and spacing are preserved byte-for-byte.
+
+### Language
+
+The screen ships **English** and **Czech**; the Czech is a draft and has not been
+reviewed by a native speaker. It follows the unit's language setting, falling
+back to English per string, so a partial translation is fine.
+
+Translations live GUI-side in `resources/gui/aaModSettings.js`, in one `STRINGS`
+table keyed by the `LANG_CODES` values from the framework's `Localization.js`
+(`LANGS_DE_GERMAN`, `LANGS_PL_POLISH`, …). **To add a language**, copy the
+`LANGS_CZ_CZECH` block, change the key, translate the values — nothing else to
+touch. Keep labels short: they render in a narrow list row, and a label that fits
+in English often does not in translation.
+
+The OEM route (`text1Id` plus a string in each `syssettingsAppDict_<locale>.js`)
+is deliberately not used — there are 42 of those files, and editing them all is
+the wholesale change to JCI's code that the one-line hook exists to avoid. The
+one string that *is* localised the OEM way is the dialog's OK button
+(`common.Ok`), which every language already has.
+
+`test/gui/aamod_settings_test.js` audits the table: it fails on a translated
+string id the English base does not define (otherwise a typo silently falls back
+to English forever) or on a translation that drops a `{0}`/`{1}` placeholder, and
+prints per-language coverage.
+
+### Install
+
+```sh
+mount -o remount,rw /
+
+# 1. the plugin, straight into the directory the host builds its path from.
+cp /mnt/sdb1/libdbapiaamod.so /jci/dbapi/plugins/
+chmod 0644 /jci/dbapi/plugins/libdbapiaamod.so
+
+# 2. register it: adds <plugin name="aamod"/> to plugins.xml
+cp /jci/dbapi/plugins.xml /jci/dbapi/plugins.xml.orig
+cd /jci/dbapi && patch -p1 < /mnt/sdb1/plugins.xml.patch
+
+# 3. the screen
+mkdir -p /jci/gui/apps/syssettings/aamod
+cp /mnt/sdb1/aaModSettings.js /jci/gui/apps/syssettings/aamod/
+
+# 4. the hook in syssettingsApp.js that loads the screen
+cp /jci/gui/apps/syssettings/js/syssettingsApp.js \
+   /jci/gui/apps/syssettings/js/syssettingsApp.js.orig
+cd /jci/gui/apps/syssettings/js && patch -p1 < /mnt/sdb1/syssettingsApp.js.patch
+
+sync
+```
+
+Steps 2 and 4 run BusyBox `patch` **in the target file's own directory**: the
+patch headers name plain basenames (`a/plugins.xml`), so `-p1` resolves to the
+file sitting right there. The `.patch` file itself can be anywhere.
+
+Two things about BusyBox 1.19.2's `patch`, which is much stricter than GNU's and
+is what runs on the car:
+
+- It does **not** strip a trailing CR from the filename in the `---`/`+++`
+  headers. `syssettingsApp.js` is a CRLF file, so a diff of it legitimately has
+  CR at the end of every payload line — but any tool that CR-terminates the
+  *header* lines too makes `patch` try to open `syssettingsApp.js<CR>` and fail
+  with `No such file or directory`, printed with the CR still in it so the
+  message overwrites itself on screen. The shipped patches keep headers LF-only
+  and `test/gui/aamod_settings_test.js` fails if that ever regresses. If you
+  regenerate a patch yourself, watch for this.
+- It has no fuzz, and `-l` does not rescue a line-ending mismatch. So **patch a
+  pristine copy of the file, not one that has been through an editor** that
+  normalised CRLF to LF — that fails with *"different line endings"*.
+
+The stock file to patch against is:
+
+```
+md5  49e9d40b1a389ee47533006a59e6df31
+size 276511 bytes
+```
+
+Worth checking your unit matches before you start (BusyBox has `md5sum`):
+
+```sh
+md5sum /jci/gui/apps/syssettings/js/syssettingsApp.js
+```
+
+**If the checksum differs, stop** — something else has already edited the file,
+or it is a firmware build the screen was not made for. **If `patch` refuses**,
+put the backup back and stop:
+
+```sh
+cp /jci/gui/apps/syssettings/js/syssettingsApp.js.orig \
+   /jci/gui/apps/syssettings/js/syssettingsApp.js
+```
+
+Do not edit the file by hand instead: the screen wraps internals of this exact
+Settings app, and on a different one it can break the whole Settings app, not
+just the mod screen. Apply each patch once only.
+
+Then restart the two services (or reboot):
+
+```sh
+smctl -r -n jciDbapi
+smctl -r -n Opera
+```
+
+`jciDbapi` picks up the plugin at start, and `Opera` re-reads the GUI files.
+
+### Using it
+
+**Settings → System → Android Auto Mod.** Toggling a row only *records* the
+change — the **Apply** row at the bottom shows how many are pending and is greyed
+out when there are none. Apply writes them all, then reports once. Leaving the
+screen without applying discards the edits (nothing was written), and re-entering
+always re-reads the file, so the screen never shows state the file does not have.
+
+Because every shim reads `libpatch.conf` once at load, a change only takes effect
+after a restart, so the dialog after Apply asks for a **CMU reboot (hold NAV +
+MUTE)** — the one action that reliably restarts every affected service. That
+dialog is navigable with the rotary commander as well as by touch.
+
+Rows are locked out while the vehicle is moving, the same as the OEM rows around
+them.
+
+### Notes
+
+- `/jci` is not on `/data_persist`, so — exactly like the `sm.conf` edit in step
+  2 of the main install — all four pieces (the plugin, the `plugins.xml` line,
+  `aaModSettings.js`, the `syssettingsApp.js` line) are lost on a firmware update
+  and need reapplying.
+- The plugin deliberately goes **in `/jci/dbapi/plugins/`** rather than living in
+  `/data_persist` behind a symlink. `jciDbapi` is an early `autorun` service, and
+  a symlink would make it depend on `/data_persist` already being mounted when
+  the host `dlopen`s it — if it isn't, the plugin is silently absent until
+  something restarts the service. `/jci` is on the rootfs and always there.
+  `plugins.xml` has to be edited in that same directory anyway, and is lost on a
+  firmware update either way, so the symlink buys nothing.
+- Verify the plugin loaded by grepping the device log for
+  `[libpatch-dbapiaamod]`; `jciDbapi` also logs
+  `Plugin aamod (...) loaded and initialized.` The GUI side logs under `aaMod:`.
+- If the plugin is missing or failed to load, the screen still opens and reports
+  the failure in a dialog (after a 10 s wait for the answer) rather than showing
+  values it cannot back up.
+- `jciDbapi` is a `reset_board` service: if it crashes, the **whole unit
+  reboots**. The plugin runs inside it, so it keeps its footprint small — it
+  binds the JSON library once at start and refuses to initialise if that fails
+  (`jciDbapi` then skips it and carries on). If you would rather not have code of
+  ours in that process, skip this optional part.
+
 ## Uninstall / disable
 
 Remove (or comment out) the `<environ_var>` line(s) you added in
@@ -326,3 +548,12 @@ Remove (or comment out) the `<environ_var>` line(s) you added in
 the affected services (`smctl -r -n jciAAPA` / `smctl -r -n jcinavi` /
 `smctl -r -n aap_service`) or reboot. The
 `/data_persist/oem-aa-mod/` directory can be deleted afterwards.
+
+If you installed the Settings screen, also restore
+`/jci/dbapi/plugins.xml` and `/jci/gui/apps/syssettings/js/syssettingsApp.js`
+from their `.orig` backups, remove
+`/jci/dbapi/plugins/libdbapiaamod.so` and the
+`/jci/gui/apps/syssettings/aamod/` directory, then restart `jciDbapi` and
+`Opera` (or reboot). Dropping just the `plugins.xml` line is enough to disable
+the plugin; dropping just the `syssettingsApp.js` line is enough to remove the
+screen.

@@ -63,8 +63,17 @@ HUD_DIR       := ../mazda/patches/blmjciaapa/hud
 # AA_NAV16_MSG_* msgId contract), same include root as the mazda build.
 HOST_CXXFLAGS := -std=gnu++11 -O2 -Wall -Wextra -I$(HUD_DIR) -I../mazda/patches
 
+# --- host self-test (confwrite_test) ---------------------------
+# Also a pure HOST build. Exercises mazda/dbapi/conf_write.h — the libpatch.conf
+# rewriter the on-unit Settings screen writes through — against the real
+# resources/libpatch.conf, checking mainly that everything it must NOT touch
+# (comments, ordering, spacing, other keys) comes back byte-identical.
+# -I../mazda/dbapi for conf_write.h + its log.h, -I../mazda/patches for the
+# common/log.h that log.h pulls in.
+CONFW_CXXFLAGS := -std=gnu++11 -O2 -Wall -Wextra -I../mazda/dbapi -I../mazda/patches
+
 BUILD := build
-TOOLS := gsi_test lane_test nav16_test config_test
+TOOLS := gsi_test lane_test nav16_test config_test confwrite_test
 BINS  := $(addprefix $(BUILD)/,$(TOOLS))
 
 .PHONY: all clean $(TOOLS)
@@ -85,6 +94,12 @@ $(BUILD)/nav16_test: nav16_test.cpp $(HUD_DIR)/hud_nav16.cpp | $(BUILD)
 # config_test is a HOST binary exercising the config.h inline parser functions.
 $(BUILD)/config_test: config_test.cpp | $(BUILD)
 	$(HOST_CXX) $(HOST_CXXFLAGS) $< -o $@
+
+# confwrite_test is also a HOST binary. Run it from the REPO ROOT so its default
+# fixture path (resources/libpatch.conf) resolves:
+#     make -C test confwrite_test && ./test/build/confwrite_test
+$(BUILD)/confwrite_test: confwrite_test.cpp ../mazda/dbapi/conf_write.h | $(BUILD)
+	$(HOST_CXX) $(CONFW_CXXFLAGS) $< -o $@
 
 # Convenience: `make gsi_test` builds build/gsi_test.
 $(TOOLS): %: $(BUILD)/%

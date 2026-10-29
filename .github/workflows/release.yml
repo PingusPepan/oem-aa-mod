@@ -106,9 +106,13 @@ jobs:
             stage="staging/${name}"
             mkdir -p "$stage"
             cp mazda/build/"$cfg"/libpatch-*.so "$stage/"
+            # The optional jciDbapi plugin behind the on-unit Settings screen.
+            # Different prefix because the host derives the filename from the
+            # plugin name: /jci/dbapi/plugins/libdbapi<name>.so.
+            cp mazda/build/"$cfg"/libdbapi*.so "$stage/"
             cp -r resources "$stage/"
             # Catch a build that "succeeds" but links for the wrong target.
-            for so in "$stage"/libpatch-*.so; do
+            for so in "$stage"/libpatch-*.so "$stage"/libdbapi*.so; do
               file "$so"
               file "$so" | grep -q 'ELF 32-bit.*ARM' || {
                 echo "::error::$so is not an ARM shared object"; exit 1; }
