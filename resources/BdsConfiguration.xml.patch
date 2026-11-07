@@ -1,0 +1,13 @@
+--- a/jci/bds/BdsConfiguration.xml
++++ b/jci/bds/BdsConfiguration.xml
+@@ -32,6 +32,10 @@
+        <serialPort id="11" name="Stitcher" noOfInstances="1" critical="false" enabled="true" uuidServer="B3093027F77A4C37860A6502360DDA76" uuidClient="B3093027F77A4C37860A6502360DDA76" writeDelay="3"/>
+        <serialPort id="12" name="AHA Radio" noOfInstances="1" critical="false" enabled="true" uuidServer="143DD5D09C4811E090579CDF03414841" uuidClient="143DD5D09C4811E090579CDF03414841" writeDelay="3"/>
+        <serialPort id="14" name="Android VDT" noOfInstances="1" critical="false" enabled="true" uuidServer="DC022184EA4D4fc38CC62F41C506D3BF" uuidClient="DC022184EA4D4fc38CC62F41C506D3BF" writeDelay="3"/>
++       <!-- Android Auto Wireless RFCOMM service, UUID 4de17a00-52cb-11e6-bdf4-0800200c9a66.
++            bds advertises it so the phone offers wireless Android Auto, and bridges the
++            connection to a PTY that aaw_handler uses. -->
++       <serialPort id="15" name="Android Auto Wireless" noOfInstances="1" critical="false" enabled="true" uuidServer="4de17a0052cb11e6bdf40800200c9a66" uuidClient="4de17a0052cb11e6bdf40800200c9a66" writeDelay="3"/>
+   </serviceConfiguration>
+    <!-- For wide band speech hfpsupportedFeatures = "0x000000FF"  For Narrow band  hfpsupportedFeatures = "0x0000006F"-->    
+    <hfpConfiguration hfpSupportedFeatures="0x0000006F" hfpInformationToSiri="JCI-IHU-0001,14"/>

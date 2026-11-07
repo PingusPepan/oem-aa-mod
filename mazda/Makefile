@@ -18,6 +18,7 @@
 #   make all            -> debug + release
 #   make <name>         -> release lib for one patch (e.g. `make blmjciaapa`)
 #   make <name>-debug   -> debug   lib for one patch (e.g. `make blmjciaapa-debug`)
+#   make tools          -> wireless-AA helper programs in build/tools/
 #   make clean          -> wipe build/
 
 M3TOOLCHAIN := ./m3-toolchain
@@ -113,7 +114,7 @@ RELEASE_DIR := $(BUILD_DIR)/release
 DEBUG_LIBS   := $(addprefix $(DEBUG_DIR)/libpatch-,$(addsuffix .so,$(PATCHES)))
 RELEASE_LIBS := $(addprefix $(RELEASE_DIR)/libpatch-,$(addsuffix .so,$(PATCHES)))
 
-.PHONY: all debug release clean $(PATCHES) $(addsuffix -debug,$(PATCHES))
+.PHONY: all debug release clean tools $(PATCHES) $(addsuffix -debug,$(PATCHES))
 .DEFAULT_GOAL := release
 
 all: debug release
@@ -158,6 +159,32 @@ $(RELEASE_DIR)/libpatch-$(1).so: $$(RELEASE_OBJS_$(1))
 endef
 
 $(foreach p,$(PATCHES),$(eval $(call gen_patch_rules,$(p))))
+
+# ---------------------------------------------------------------------------
+# Wireless-AA helper programs (tools/<name>.cpp -> build/tools/<name>). Plain
+# executables run on the CMU, not LD_PRELOAD shims: aaw_listend watches BCA's
+# connection signal on the service bus and spawns aaw_handler for each Android
+# Auto Wireless RFCOMM connection. Both use libdbus-1 from the sysroot. Deployed
+# to /data_persist/oem-aa-mod/ (see docs/installation.md).
+TOOLS     := aaw_listend aaw_handler
+TOOLS_DIR := $(BUILD_DIR)/tools
+TOOL_BINS := $(addprefix $(TOOLS_DIR)/,$(TOOLS))
+
+TOOLS_CXXFLAGS := -std=c++11 \
+                  --sysroot=$(SYSROOT) \
+                  -march=armv7-a -mtune=cortex-a9 -mfpu=neon \
+                  -D_GLIBCXX_USE_CXX11_ABI=0 \
+                  -O2 \
+                  -I$(SYSROOT)/usr/include/dbus-1.0 \
+                  -I$(SYSROOT)/usr/lib/dbus-1.0/include \
+                  $(EXTRA_CXXFLAGS)
+TOOLS_LDFLAGS  := --sysroot=$(SYSROOT) -Wl,-s -ldbus-1
+
+tools: $(TOOL_BINS)
+
+$(TOOLS_DIR)/%: tools/%.cpp tools/aaw.h
+	@mkdir -p $(@D)
+	$(CXX) $(TOOLS_CXXFLAGS) $< $(TOOLS_LDFLAGS) -o $@
 
 clean:
 	rm -rf $(BUILD_DIR)

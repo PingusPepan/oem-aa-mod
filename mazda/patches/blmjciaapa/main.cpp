@@ -25,6 +25,7 @@
 #include "log.h"
 #include "common/config.h"
 #include "common/preload_guard.h"
+#include "aaw_session.h"
 
 #include <unistd.h>
 
@@ -72,6 +73,9 @@ void on_load()
 
     LOGD("self-gate deferred to first aap_create_session call pid=%d",
          (int)getpid());
+
+    // Wireless Android Auto session listener (no-op unless wireless=true).
+    aaw_session::start();
 }
 
 } // namespace

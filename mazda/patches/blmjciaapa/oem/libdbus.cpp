@@ -78,3 +78,9 @@ OEM_THUNK(int, dbus_message_iter_get_arg_type,
           (DBusMessageIter *iter), (iter), 0)
 OEM_THUNK_VOID(dbus_message_iter_get_basic,
                (DBusMessageIter *iter, void *value), (iter, value))
+OEM_THUNK(int, dbus_message_iter_next, (DBusMessageIter *iter), (iter), 0)
+OEM_THUNK(int, dbus_connection_read_write,
+          (void *conn, int timeout_ms), (conn, timeout_ms), 0)
+OEM_THUNK(int, dbus_message_get_type, (void *msg), (msg), 0)
+OEM_THUNK(const char *, dbus_message_get_member, (void *msg), (msg), nullptr)
+OEM_THUNK(const char *, dbus_message_get_interface, (void *msg), (msg), nullptr)

@@ -29,6 +29,10 @@
 #define DBUS_TYPE_BYTE   ((int)'y')   // 121
 #define DBUS_TYPE_INT32  ((int)'i')   // 105
 #define DBUS_TYPE_STRING ((int)'s')   // 115
+#define DBUS_TYPE_UINT32 ((int)'u')   // 117
+
+// D-Bus message type (dbus-protocol.h).
+#define DBUS_MESSAGE_TYPE_SIGNAL 4
 
 // DBusWatch readiness flags (dbus-connection.h).
 #define DBUS_WATCH_READABLE (1u << 0)
@@ -108,5 +112,11 @@ DBusBool dbus_message_is_signal(void *msg, const char *iface,
 DBusBool dbus_message_iter_init(void *msg, DBusMessageIter *iter);
 int  dbus_message_iter_get_arg_type(DBusMessageIter *iter);
 void dbus_message_iter_get_basic(DBusMessageIter *iter, void *value);
+int  dbus_message_iter_next(DBusMessageIter *iter);
+
+int         dbus_connection_read_write(void *conn, int timeout_ms);
+int         dbus_message_get_type(void *msg);
+const char *dbus_message_get_member(void *msg);
+const char *dbus_message_get_interface(void *msg);
 
 #endif  // LIBPATCH_BLMJCIAAPA_LIBDBUS_H

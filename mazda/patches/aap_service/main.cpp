@@ -10,6 +10,7 @@
 #include "log.h"
 #include "audio/audio.h"
 #include "navi/navi.h"
+#include "net/sockbuf.h"
 #include "common/config.h"
 #include "common/preload_guard.h"
 
@@ -40,6 +41,10 @@ void aap_service_patch_init()
     } else {
         LOGD("use_protocol_v1_6=false -> GAL 1.5 (stock); navi module inert");
     }
+
+    // Not gated on `wireless`: the AA TCP listener is created at startup, before
+    // any session, and only Wi-Fi sessions use it (USB carries no TCP).
+    aap_service_net::init();
 }
 
 } // namespace

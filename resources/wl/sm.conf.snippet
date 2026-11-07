@@ -1,0 +1,23 @@
+<!-- ============================================================================
+     start_aa_ap: boot service for wireless Android Auto. Starts the 5 GHz AP
+     on wlan1 (hostapd, udhcpd, firewall rule) and aaw_listend.
+
+     Paste it inside <services>...</services> of the service manifest the unit
+     boots: /jci/sm/sm.conf, or /jci/sm/sm_WCP.conf on units that boot that one
+     (check: ps w | grep 'jci/sm/sm -f').
+
+     Dependencies:
+       - load_wlan1  : the service that loads the Wi-Fi driver. Rename it to
+                       match the service your driver package installs.
+       - aap_service : the shim writes /tmp/aa-hostapd-wlan1.conf when
+                       aap_service loads, so the file exists before hostapd
+                       starts. start-aa-ap.sh also waits for it.
+
+     reset_board="no": a failure here must never reset the unit.
+     exit_allowed / started_after_exit_allowed="yes": runs once and exits.
+     Adjust the path if start-aa-ap.sh is not in /data_persist/wl/.
+     ============================================================================ -->
+        <service type="process" name="start_aa_ap" path="/data_persist/wl/start-aa-ap.sh" autorun="yes" reset_board="no" retry_count="2" exit_allowed="yes" started_after_exit_allowed="yes" args="">
+            <dependency type="service" value="load_wlan1"/>
+            <dependency type="service" value="aap_service"/>
+        </service>
