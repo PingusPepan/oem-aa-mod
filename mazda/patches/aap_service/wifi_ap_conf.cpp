@@ -39,6 +39,7 @@
 
 #include "log.h"
 #include "common/config.h"
+#include "common/ap_spawn.h"
 
 #include <cstdint>
 #include <cstdio>
@@ -372,34 +373,10 @@ void spawn_ap_script()
 {
     const char *script = libpatch_config::aa_ap_script();
     if (!script || !script[0]) return;
-    if (access(script, R_OK) != 0) {
-        LOGE("ap-script: %s not readable, AP not started here", script);
+    if (ap_spawn::start_detached(script, "/tmp/aa-ap-start.log") < 0) {
+        LOGE("ap-script: %s not started (missing, unreadable or fork failed)", script);
         return;
     }
-    static char *const envp[] = {
-        const_cast<char *>("PATH=/usr/sbin:/usr/bin:/sbin:/bin"),
-        const_cast<char *>("HOME=/"),
-        nullptr
-    };
-    char *const argv[] = { const_cast<char *>("sh"), const_cast<char *>(script), nullptr };
-    const pid_t first = fork();
-    if (first < 0) { LOGE("ap-script: fork failed"); return; }
-    if (first == 0) {
-        setsid();
-        const pid_t second = fork();
-        if (second == 0) {
-            const int fd = open("/tmp/aa-ap-start.log", O_WRONLY | O_CREAT | O_TRUNC, 0644);
-            const int nul = open("/dev/null", O_RDONLY);
-            if (nul >= 0) dup2(nul, 0);
-            if (fd >= 0) { dup2(fd, 1); dup2(fd, 2); }
-            for (int i = 3; i < 256; ++i) close(i);
-            execve("/bin/sh", argv, envp);
-            _exit(127);
-        }
-        _exit(0);
-    }
-    int status = 0;
-    waitpid(first, &status, 0);
     LOGE("ap-script: started %s (log /tmp/aa-ap-start.log)", script);
 }
 
