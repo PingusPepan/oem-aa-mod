@@ -45,6 +45,8 @@
 #include <cstring>
 #include <fcntl.h>
 #include <sys/mman.h>
+#include <sys/types.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #undef  LOG_TAG
@@ -359,6 +361,48 @@ void install_transinfo_hook()
     LOGE("trans-info: 0.0.0.0 accepted");
 }
 
+// ---- AP start script (built-in radio setup) ---------------------------------
+// With aa_ap_script set, aap_service starts the AP script itself right after
+// writing hostapd.conf, so no extra sm.conf service is needed. The script runs
+// fully detached (double fork, own session, own stdio, no inherited fds) and
+// with a clean environment: no LD_PRELOAD, so hostapd, udhcpd and the helpers
+// never load this shim. Only async-signal-safe calls run between fork and
+// exec. The script must be idempotent: an aap_service restart starts it again.
+void spawn_ap_script()
+{
+    const char *script = libpatch_config::aa_ap_script();
+    if (!script || !script[0]) return;
+    if (access(script, R_OK) != 0) {
+        LOGE("ap-script: %s not readable, AP not started here", script);
+        return;
+    }
+    static char *const envp[] = {
+        const_cast<char *>("PATH=/usr/sbin:/usr/bin:/sbin:/bin"),
+        const_cast<char *>("HOME=/"),
+        nullptr
+    };
+    char *const argv[] = { const_cast<char *>("sh"), const_cast<char *>(script), nullptr };
+    const pid_t first = fork();
+    if (first < 0) { LOGE("ap-script: fork failed"); return; }
+    if (first == 0) {
+        setsid();
+        const pid_t second = fork();
+        if (second == 0) {
+            const int fd = open("/tmp/aa-ap-start.log", O_WRONLY | O_CREAT | O_TRUNC, 0644);
+            const int nul = open("/dev/null", O_RDONLY);
+            if (nul >= 0) dup2(nul, 0);
+            if (fd >= 0) { dup2(fd, 1); dup2(fd, 2); }
+            for (int i = 3; i < 256; ++i) close(i);
+            execve("/bin/sh", argv, envp);
+            _exit(127);
+        }
+        _exit(0);
+    }
+    int status = 0;
+    waitpid(first, &status, 0);
+    LOGE("ap-script: started %s (log /tmp/aa-ap-start.log)", script);
+}
+
 __attribute__((constructor))
 void wifi_ap_conf_init()
 {
@@ -373,6 +417,7 @@ void wifi_ap_conf_init()
     aa_write_hostapd_conf();
     install_wifi_conf_hook();
     install_transinfo_hook();
+    spawn_ap_script();
 }
 
 } // namespace

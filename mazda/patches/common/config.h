@@ -92,6 +92,10 @@
 //   aa_tcp_port   = <port>             AA TCP server port                 (default 5277)
 //   aa_ap_ip      = <ip>               AP address the phone is told to connect to
 //                                                                         (default 192.168.53.1)
+//   aa_ap_script  = <path>             AP start script that aap_service starts
+//                                      itself, detached, after writing hostapd.conf.
+//                                      Empty = not started here (use the
+//                                      start_aa_ap sm service instead) (default empty)
 //
 // Booleans are lenient (true/1/yes/on, false/0/no/off). hud_transport
 // also accepts "svcjcinavi" as an alias for "svcnavi".
@@ -338,6 +342,7 @@ struct Settings {
     char         aa_tcp_ip[24]     = "0.0.0.0"; // 0.0.0.0 = all interfaces
     unsigned     aa_tcp_port       = 5277;
     char         aa_ap_ip[24]      = "192.168.53.1"; // told to the phone
+    char         aa_ap_script[160] = "";        // empty = AP started by an sm service
     bool         loaded            = false;
 };
 
@@ -424,6 +429,8 @@ inline void apply_kv(const char *key, const char *val, void *ud)
         s.aa_tcp_port = (unsigned)strtoul(val, nullptr, 10);
     } else if (strcasecmp(key, "aa_ap_ip") == 0) {
         snprintf(s.aa_ap_ip, sizeof(s.aa_ap_ip), "%s", val);
+    } else if (strcasecmp(key, "aa_ap_script") == 0) {
+        snprintf(s.aa_ap_script, sizeof(s.aa_ap_script), "%s", val);
     } else {
         // Common schema: a key this library doesn't act on is not an
         // error, just informational.
@@ -525,6 +532,7 @@ inline bool          aa_hidden()   { return settings().aa_hidden; }
 inline const char  *aa_tcp_ip()   { return settings().aa_tcp_ip; }
 inline unsigned      aa_tcp_port() { return settings().aa_tcp_port; }
 inline const char  *aa_ap_ip()    { return settings().aa_ap_ip; }
+inline const char  *aa_ap_script() { return settings().aa_ap_script; }
 
 } // namespace libpatch_config
 

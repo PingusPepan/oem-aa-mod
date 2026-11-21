@@ -233,6 +233,26 @@ int main()
         }
     }
 
+    // [10] wireless AP keys used by the built-in-radio setup -----------------
+    {
+        printf("[10] wireless AP keys\n");
+        libpatch_config::Settings s;
+        CHECK_EQ_S(s.aa_ap_script, "", "aa_ap_script default is empty (sm service starts the AP)");
+        CHECK_EQ_S(s.aa_iface, "wlan1", "aa_iface default");
+        libpatch_config::apply_kv("aa_ap_script",
+            "/tmp/mnt/data_persist/mzd-tweaks/shims/android-auto/start-aa-ap.sh", &s);
+        CHECK_EQ_S(s.aa_ap_script,
+            "/tmp/mnt/data_persist/mzd-tweaks/shims/android-auto/start-aa-ap.sh", "aa_ap_script set");
+        libpatch_config::apply_kv("aa_iface", "wlan0", &s);
+        libpatch_config::apply_kv("aa_channel", "6", &s);
+        CHECK_EQ_S(s.aa_iface, "wlan0", "aa_iface=wlan0");
+        CHECK_EQ_U(s.aa_channel, 6, "aa_channel=6 (2.4 GHz)");
+        char longp[400];
+        memset(longp, 'x', sizeof longp - 1); longp[sizeof longp - 1] = '\0';
+        libpatch_config::apply_kv("aa_ap_script", longp, &s);
+        CHECK_EQ_U(strlen(s.aa_ap_script), sizeof(s.aa_ap_script) - 1, "overlong aa_ap_script is truncated, not overflowed");
+    }
+
     printf("\n%s\n", g_fail ? "RESULT: FAIL" : "RESULT: PASS");
     return g_fail;
 }
