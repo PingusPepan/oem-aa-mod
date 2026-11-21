@@ -39,12 +39,15 @@
 
 #include "log.h"
 #include "common/config.h"
+#include "common/ap_spawn.h"
 
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <fcntl.h>
 #include <sys/mman.h>
+#include <sys/types.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #undef  LOG_TAG
@@ -359,6 +362,24 @@ void install_transinfo_hook()
     LOGE("trans-info: 0.0.0.0 accepted");
 }
 
+// ---- AP start script (built-in radio setup) ---------------------------------
+// With aa_ap_script set, aap_service starts the AP script itself right after
+// writing hostapd.conf, so no extra sm.conf service is needed. The script runs
+// fully detached (double fork, own session, own stdio, no inherited fds) and
+// with a clean environment: no LD_PRELOAD, so hostapd, udhcpd and the helpers
+// never load this shim. Only async-signal-safe calls run between fork and
+// exec. The script must be idempotent: an aap_service restart starts it again.
+void spawn_ap_script()
+{
+    const char *script = libpatch_config::aa_ap_script();
+    if (!script || !script[0]) return;
+    if (ap_spawn::start_detached(script, "/tmp/aa-ap-start.log") < 0) {
+        LOGE("ap-script: %s not started (missing, unreadable or fork failed)", script);
+        return;
+    }
+    LOGE("ap-script: started %s (log /tmp/aa-ap-start.log)", script);
+}
+
 __attribute__((constructor))
 void wifi_ap_conf_init()
 {
@@ -373,6 +394,7 @@ void wifi_ap_conf_init()
     aa_write_hostapd_conf();
     install_wifi_conf_hook();
     install_transinfo_hook();
+    spawn_ap_script();
 }
 
 } // namespace

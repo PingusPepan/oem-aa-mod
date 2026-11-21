@@ -64,7 +64,7 @@ HUD_DIR       := ../mazda/patches/blmjciaapa/hud
 HOST_CXXFLAGS := -std=gnu++11 -O2 -Wall -Wextra -I$(HUD_DIR) -I../mazda/patches
 
 BUILD := build
-TOOLS := gsi_test lane_test nav16_test config_test
+TOOLS := gsi_test lane_test nav16_test config_test ap_spawn_test
 BINS  := $(addprefix $(BUILD)/,$(TOOLS))
 
 .PHONY: all clean $(TOOLS)
@@ -84,6 +84,10 @@ $(BUILD)/nav16_test: nav16_test.cpp $(HUD_DIR)/hud_nav16.cpp | $(BUILD)
 
 # config_test is a HOST binary exercising the config.h inline parser functions.
 $(BUILD)/config_test: config_test.cpp | $(BUILD)
+	$(HOST_CXX) $(HOST_CXXFLAGS) $< -o $@
+
+# ap_spawn_test is a HOST binary exercising common/ap_spawn.h (aa_ap_script start).
+$(BUILD)/ap_spawn_test: ap_spawn_test.cpp ../mazda/patches/common/ap_spawn.h | $(BUILD)
 	$(HOST_CXX) $(HOST_CXXFLAGS) $< -o $@
 
 # Convenience: `make gsi_test` builds build/gsi_test.
