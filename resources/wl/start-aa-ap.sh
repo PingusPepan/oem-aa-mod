@@ -92,6 +92,7 @@ RESULT=started-unexpected-exit    # updated as the script progresses
 WAIT_CONF=0; WAIT_IFACE=0; HOSTAPD_TRIES=0; HOSTAPD_ERR=-; HUB_AT=never
 
 breadcrumb() {
+    mkdir -p "$(dirname "$BOOTLOG")" 2>/dev/null
     bc_common
     hp=no; for pid in $(pidof hostapd 2>/dev/null); do
         tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null | grep -q "$CONF" && hp=yes
