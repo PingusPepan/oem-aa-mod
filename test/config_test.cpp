@@ -253,6 +253,32 @@ int main()
         CHECK_EQ_U(strlen(s.aa_ap_script), sizeof(s.aa_ap_script) - 1, "overlong aa_ap_script is truncated, not overflowed");
     }
 
+    // [11] wireless.conf then libpatch.conf: package defaults, user overrides --
+    {
+        printf("[11] wireless.conf read before libpatch.conf\n");
+        const char *wf = "/tmp/config_test_wireless.conf";
+        const char *lf = "/tmp/config_test_libpatch.conf";
+        FILE *w = fopen(wf, "w");
+        fprintf(w, "wireless = true\naa_iface = wlan0\naa_channel = 6\n"
+                   "aa_ap_script = /tmp/mnt/data_persist/oem-aa-mod/start-aa-ap.sh\n");
+        fclose(w);
+        FILE *l = fopen(lf, "w");
+        fprintf(l, "touch = true\naa_channel = 11\n");   // user file: no wireless switch
+        fclose(l);
+        libpatch_config::Settings s;
+        CHECK(libpatch_config::parse_file(wf, &libpatch_config::apply_kv, &s), "wireless.conf parsed");
+        CHECK(libpatch_config::parse_file(lf, &libpatch_config::apply_kv, &s), "libpatch.conf parsed");
+        CHECK(s.wireless, "wireless=true comes from the package file");
+        CHECK_EQ_S(s.aa_iface, "wlan0", "aa_iface from the package file");
+        CHECK_EQ_U(s.aa_channel, 11, "user libpatch.conf overrides aa_channel");
+        l = fopen(lf, "w"); fprintf(l, "wireless = false\n"); fclose(l);
+        libpatch_config::Settings t;
+        libpatch_config::parse_file(wf, &libpatch_config::apply_kv, &t);
+        libpatch_config::parse_file(lf, &libpatch_config::apply_kv, &t);
+        CHECK(!t.wireless, "user can switch wireless off in libpatch.conf");
+        remove(wf); remove(lf);
+    }
+
     printf("\n%s\n", g_fail ? "RESULT: FAIL" : "RESULT: PASS");
     return g_fail;
 }

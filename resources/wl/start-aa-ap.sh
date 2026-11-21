@@ -26,11 +26,15 @@ HERE=$(dirname "$(readlink -f "$0")")
 if [ -n "${AAW_DIR:-}" ]; then TOOLS_DIR=$AAW_DIR
 elif [ -f "$HERE/aaw_listend" ]; then TOOLS_DIR=$HERE
 else TOOLS_DIR=/data_persist/oem-aa-mod; fi
+# wireless.conf (package-owned AP keys, read by the shims before libpatch.conf)
+# is what the helpers get when present: aaw_handler needs only the aa_* keys.
 if [ -n "${AA_CONF_LP:-}" ]; then CONF_LP=$AA_CONF_LP
+elif [ -f "$HERE/wireless.conf" ]; then CONF_LP=$HERE/wireless.conf
 elif [ -f "$HERE/libpatch.conf" ]; then CONF_LP=$HERE/libpatch.conf
 else CONF_LP=/data_persist/oem-aa-mod/libpatch.conf; fi
-# aa_iface: AA_IFACE, else the last aa_iface line of libpatch.conf, else wlan1.
-IFACE=${AA_IFACE:-$(sed -n 's/^[[:space:]]*aa_iface[[:space:]]*=[[:space:]]*\([A-Za-z0-9_.-]*\).*/\1/p' "$CONF_LP" 2>/dev/null | tail -n 1)}
+# aa_iface: AA_IFACE, else the last aa_iface line (wireless.conf, then
+# libpatch.conf, so a user override wins, as in the shims), else wlan1.
+IFACE=${AA_IFACE:-$(cat "$HERE/wireless.conf" "$CONF_LP" "$HERE/libpatch.conf" 2>/dev/null | sed -n 's/^[[:space:]]*aa_iface[[:space:]]*=[[:space:]]*\([A-Za-z0-9_.-]*\).*/\1/p' | tail -n 1)}
 [ -n "$IFACE" ] || IFACE=wlan1
 AP_IP=192.168.53.1
 CONF=/tmp/aa-hostapd-wlan1.conf

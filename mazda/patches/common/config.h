@@ -133,6 +133,8 @@
 namespace libpatch_config {
 
 constexpr const char *kConfigFile = "libpatch.conf";
+// Read before libpatch.conf when present (see load()).
+constexpr const char *kWirelessFile = "wireless.conf";
 
 // HUD output transport. Both backends are compiled into blmjciaapa; the
 // active one is chosen from `hud_transport`. svcnavi routes through the
@@ -488,6 +490,14 @@ inline void load(const void *sym_in_self)
     s.loaded = true;
 
     char path[PATH_MAX];
+    // Optional package-owned defaults (wireless AP keys) first, so the user's
+    // libpatch.conf, read next, can still override them (e.g. wireless=false).
+    // Installers keep a user's libpatch.conf on update; this file is replaced.
+    char wpath[PATH_MAX];
+    if (find_sibling_file(sym_in_self, kWirelessFile, wpath, sizeof(wpath)) &&
+        parse_file(wpath, &apply_kv, &s)) {
+        LOGD("config: loaded %s", wpath);
+    }
     if (!find_sibling_file(sym_in_self, kConfigFile, path, sizeof(path))) {
         LOGW("config: could not resolve own .so directory — using defaults");
         log_effective("defaults:");
